@@ -1,0 +1,996 @@
+<title>Receipts Build Spec</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Instrument+Sans:wght@400..700&family=Spline+Sans+Mono:wght@300..700&display=swap">
+
+<style>
+:root{
+  --paper:#E9E7DE; --paper-2:#E2DFD4; --sunk:#DCD8CB;
+  --ink:#15181A; --ink-soft:#3C4241; --fade:#6E736B;
+  --rule:#CFCCBF; --rule-hard:#B3AF9F;
+  --ultra:#2B3FD9; --ultra-on:#FFFFFF; --ultra-tint:#DDE0F7;
+  --chrome:#F5C518; --chrome-on:#15181A; --chrome-tint:#F6EBC4;
+  --chilli:#DC3B23; --chilli-on:#FFFFFF; --chilli-tint:#F7DDD7;
+  --code:#E2DFD4;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#131618; --paper-2:#1A1E20; --sunk:#0D0F11;
+    --ink:#E7E5DC; --ink-soft:#BEC0B7; --fade:#8A8F87;
+    --rule:#2A2F31; --rule-hard:#414749;
+    --ultra:#8B97FF; --ultra-on:#0D0F11; --ultra-tint:#1E2440;
+    --chrome:#F2C630; --chrome-on:#15181A; --chrome-tint:#332B10;
+    --chilli:#FF6B52; --chilli-on:#15181A; --chilli-tint:#3A1D16;
+    --code:#1A1E20;
+  }
+}
+[data-theme="dark"]{
+  --paper:#131618; --paper-2:#1A1E20; --sunk:#0D0F11;
+  --ink:#E7E5DC; --ink-soft:#BEC0B7; --fade:#8A8F87;
+  --rule:#2A2F31; --rule-hard:#414749;
+  --ultra:#8B97FF; --ultra-on:#0D0F11; --ultra-tint:#1E2440;
+  --chrome:#F2C630; --chrome-on:#15181A; --chrome-tint:#332B10;
+  --chilli:#FF6B52; --chilli-on:#15181A; --chilli-tint:#3A1D16;
+  --code:#1A1E20;
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:"Instrument Sans",ui-sans-serif,system-ui,sans-serif;
+  font-size:17px; line-height:1.62;
+  margin:0; padding:0 24px 140px;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:820px;margin:0 auto}
+.prose{max-width:68ch}
+
+h1,h2,h3,h4{font-family:"Archivo",ui-sans-serif,sans-serif;text-wrap:balance;margin:0}
+h2{
+  font-size:clamp(1.7rem,4.4vw,2.35rem); font-weight:800;
+  font-variation-settings:"wdth" 112; line-height:1.08;
+  letter-spacing:-.018em; margin:0 0 6px;
+}
+h3{
+  font-size:1.16rem; font-weight:700; font-variation-settings:"wdth" 105;
+  line-height:1.3; margin:34px 0 10px; letter-spacing:-.005em;
+}
+h4{
+  font-family:"Spline Sans Mono",ui-monospace,monospace;
+  font-size:.7rem; font-weight:600; text-transform:uppercase;
+  letter-spacing:.16em; color:var(--fade); margin:28px 0 10px;
+}
+p{margin:0 0 16px}
+a{color:var(--ultra)}
+strong{font-weight:600;color:var(--ink)}
+em{font-style:italic}
+
+.lab{
+  font-family:"Spline Sans Mono",ui-monospace,monospace;
+  font-size:.68rem; font-weight:600; text-transform:uppercase;
+  letter-spacing:.18em; color:var(--fade);
+}
+
+/* ---- masthead ---- */
+.mast{border-bottom:2px solid var(--ink);padding:52px 0 22px;margin-bottom:8px}
+.mast .kicker{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:26px}
+.mast h1{
+  font-size:clamp(3.2rem,13vw,6.4rem); font-weight:900;
+  font-variation-settings:"wdth" 125; line-height:.86;
+  letter-spacing:-.045em; text-transform:uppercase;
+}
+.mast .sub{
+  font-family:"Archivo",sans-serif;font-variation-settings:"wdth" 100;
+  font-size:clamp(1.05rem,2.6vw,1.4rem);font-weight:500;
+  color:var(--ink-soft);margin:16px 0 0;max-width:34ch;line-height:1.32;
+}
+.dek{
+  border-left:3px solid var(--chilli); padding-left:18px; margin:30px 0 44px;
+  font-size:1.08rem; color:var(--ink-soft); max-width:60ch;
+}
+
+/* ---- section head ---- */
+.sec{margin:72px 0 0;padding-top:26px;border-top:1px solid var(--rule)}
+.sec-tag{
+  font-family:"Spline Sans Mono",monospace;font-size:.68rem;font-weight:600;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--chilli);
+  display:block;margin-bottom:12px;
+}
+.sec p.intro{font-size:1.06rem;color:var(--ink-soft);max-width:62ch;margin-top:14px}
+
+/* ---- blocks ---- */
+.card{background:var(--paper-2);border:1px solid var(--rule);border-radius:4px;padding:20px 22px;margin:20px 0}
+.rule-list{list-style:none;padding:0;margin:16px 0}
+.rule-list li{padding:11px 0;border-bottom:1px solid var(--rule);display:flex;gap:14px}
+.rule-list li:first-child{border-top:1px solid var(--rule)}
+.rule-list .n{
+  font-family:"Spline Sans Mono",monospace;font-size:.72rem;font-weight:600;
+  color:var(--fade);flex:none;width:2.2em;padding-top:.35em;
+}
+ul.plain{padding-left:20px;margin:14px 0}
+ul.plain li{margin-bottom:8px}
+
+.no{border-left:3px solid var(--chilli);background:var(--chilli-tint);padding:14px 18px;border-radius:0 4px 4px 0;margin:16px 0}
+.yes{border-left:3px solid var(--ultra);background:var(--ultra-tint);padding:14px 18px;border-radius:0 4px 4px 0;margin:16px 0}
+.no p:last-child,.yes p:last-child{margin-bottom:0}
+
+.scroll{overflow-x:auto;margin:20px 0;border:1px solid var(--rule);border-radius:4px}
+table{border-collapse:collapse;width:100%;font-size:.88rem;min-width:520px}
+th{
+  font-family:"Spline Sans Mono",monospace;font-size:.65rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:.14em;color:var(--fade);
+  text-align:left;padding:11px 14px;background:var(--paper-2);
+  border-bottom:1px solid var(--rule-hard);white-space:nowrap;
+}
+td{padding:11px 14px;border-bottom:1px solid var(--rule);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.mono,th.mono{font-family:"Spline Sans Mono",monospace;font-size:.8rem;font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:13px;height:13px;border-radius:2px;border:1px solid var(--rule-hard);vertical-align:-2px;margin-right:8px}
+
+pre{
+  background:var(--code);border:1px solid var(--rule);border-radius:4px;
+  padding:16px 18px;overflow-x:auto;margin:18px 0;
+  font-family:"Spline Sans Mono",monospace;font-size:.79rem;line-height:1.6;
+}
+code{font-family:"Spline Sans Mono",monospace;font-size:.86em;background:var(--code);padding:1px 5px;border-radius:3px}
+pre code{background:none;padding:0;font-size:1em}
+
+/* ---- phone specimens ---- */
+.rack{display:flex;gap:26px;flex-wrap:wrap;margin:28px 0 8px}
+.spec{flex:1 1 258px;max-width:300px}
+.spec .cap{margin-top:12px;font-size:.83rem;color:var(--fade);line-height:1.45}
+.spec .cap b{color:var(--ink);font-weight:600;display:block;font-family:"Archivo",sans-serif}
+.phone{
+  width:100%; aspect-ratio:280/570; border-radius:26px; overflow:hidden;
+  background:#E9E7DE; color:#15181A; border:1px solid var(--rule-hard);
+  box-shadow:0 2px 0 var(--rule-hard);
+  font-family:"Instrument Sans",sans-serif; font-size:9.5px; line-height:1.4;
+  padding:14px 14px 0; display:flex; flex-direction:column; position:relative;
+}
+.phone .pl{font-family:"Spline Sans Mono",monospace;font-size:6.4px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:#6E736B}
+.phone .big{font-family:"Archivo",sans-serif;font-weight:900;font-variation-settings:"wdth" 125;letter-spacing:-.04em;line-height:.85;font-size:38px}
+.phone .mid{font-family:"Archivo",sans-serif;font-weight:800;font-variation-settings:"wdth" 112;letter-spacing:-.02em;line-height:1;font-size:15px}
+.phone .num{font-family:"Spline Sans Mono",monospace;font-variant-numeric:tabular-nums;font-weight:500}
+.phone hr{border:none;border-top:1px solid #CFCCBF;margin:9px 0}
+.phone .perf{border:none;border-top:1.5px dashed #B3AF9F;margin:10px 0}
+.mono2{
+  width:15px;height:15px;border-radius:3px;flex:none;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-family:"Spline Sans Mono",monospace;font-size:6.2px;font-weight:700;
+  letter-spacing:.02em;color:#fff;
+}
+.row{display:flex;align-items:center;gap:7px;padding:5px 0}
+.row .gr{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .amt{font-family:"Spline Sans Mono",monospace;font-variant-numeric:tabular-nums;font-weight:600;font-size:9px}
+.tabs{margin-top:auto;display:flex;border-top:1px solid #CFCCBF;padding:7px 0 9px;gap:2px}
+.tabs span{flex:1;text-align:center;font-family:"Spline Sans Mono",monospace;font-size:6.2px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#6E736B}
+.tabs span.on{color:#15181A}
+.tabs span.on:after{content:"";display:block;width:12px;height:2px;background:#DC3B23;margin:3px auto 0}
+.pill{display:inline-block;padding:2.5px 7px;border-radius:99px;font-family:"Spline Sans Mono",monospace;font-size:6.2px;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.railbar{height:7px;background:#DCD8CB;border-radius:99px;overflow:hidden;position:relative}
+.railbar i{display:block;height:100%;background:#15181A}
+.railbar u{position:absolute;top:-2px;bottom:-2px;width:1.5px;background:#DC3B23}
+
+.stamp{
+  border:1.5px solid #DC3B23;color:#DC3B23;border-radius:3px;padding:5px 4px;
+  text-align:center;font-family:"Spline Sans Mono",monospace;font-weight:700;
+  font-size:5.6px;letter-spacing:.08em;text-transform:uppercase;line-height:1.25;
+}
+.stamp.off{border-color:#B3AF9F;color:#B3AF9F;border-style:dashed}
+.stamp b{display:block;font-size:8px;letter-spacing:.02em;margin-bottom:1px}
+
+.key{
+  background:#E2DFD4;border:1px solid #CFCCBF;border-radius:5px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:"Archivo",sans-serif;font-weight:700;font-size:14px;padding:7px 0;
+}
+
+.foot{margin-top:80px;border-top:2px solid var(--ink);padding-top:20px;font-size:.85rem;color:var(--fade)}
+
+:focus-visible{outline:2px solid var(--ultra);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:560px){
+  body{padding:0 18px 100px;font-size:16px}
+  .rack{gap:20px}
+  .spec{max-width:none}
+}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div class="kicker">
+    <span class="lab">Product &amp; design spec &middot; v1</span>
+    <span class="lab">For Ragav &middot; Aug 2026</span>
+  </div>
+  <h1>Receipts</h1>
+  <p class="sub">Rebuilding TrackBudget into something a 22-year-old opens on purpose.</p>
+</header>
+
+<p class="dek">Every colour, size, weight, spacing value, animation duration and line of copy is specified here, so that <strong>none of it has to be re-decided while you're building.</strong> That is the only reason this document is this detailed.</p>
+
+<div class="yes" style="max-width:60ch">
+  <p><strong>Ragav owns this product.</strong> Add features, cut features, reorder the phases, disagree with any of it, throw out the parts that don't survive contact with real code. This is the strongest default we could write &mdash; it is not a contract.</p>
+  <p style="margin-top:10px">The one ask: change it <em>deliberately, and in one place</em>, rather than drifting away from it file by file. A design system only works if it's coherent, and <em>which</em> coherent system you land on matters far less than that it stays one. If you replace something here, write down what you replaced it with. That's the whole process.</p>
+</div>
+
+<p class="prose">The engine you already built is good and it stays. <code>model/</code>, <code>data/</code> and <code>sms/</code> are keepers &mdash; SMS ingest, SHA-256 dedupe, refund-netting, learned rules, the analytics pass. Roughly 1,000 lines of correct domain logic that took real work to get right.</p>
+
+<p class="prose">The UI layer is what we're replacing. <code>ui/TrackBudgetApp.kt</code> is 1,674 lines holding every screen, sheet and helper in one file, and it renders an app that looks like accounting software. That file goes.</p>
+
+<!-- ============ DIAGNOSIS ============ -->
+<section class="sec">
+  <span class="sec-tag">Where we are</span>
+  <h2>Three things kill it for this audience</h2>
+  <p class="intro">Not opinions &mdash; each maps to a specific thing on screen right now.</p>
+
+  <h3>1. It's a shame engine</h3>
+  <p class="prose">The hero number is <em>&ldquo;Left to spend today &#8377;264.16&rdquo;</em> sitting on a bar that drains. Every single app open delivers the same message: <em>you are running out.</em></p>
+  <p class="prose">Shame is the shortest-lived motivator there is. It's the most-cited reason budgeting apps see roughly 60% abandonment inside 30 days &mdash; users disengage well before the behaviour becomes a habit. Apps that survive use <em>building</em> framing: progress made, next milestone, record accumulated.</p>
+  <p class="prose">The fix is not new maths. <code>safeTodayMinor</code> is a good number and we keep computing it exactly as-is. We change what it's called and what sits next to it.</p>
+
+  <h3>2. Insights is a bank statement</h3>
+  <p class="prose">The Insights tab currently ends on <em>&ldquo;Average confirmed debit &#8377;183 &middot; Transactions tracked: 10&rdquo;</em> and then half a screen of nothing. Nobody has ever wanted the arithmetic mean of their debits.</p>
+  <p class="prose">Meanwhile <code>Analytics.kt</code> already computes projected spend, committed-vs-flexible split, category shifts against the previous period, top merchants, concentration share and recurring detection &mdash; and almost none of it reaches the screen in a form anyone would read. The data is there. The delivery is missing.</p>
+
+  <h3>3. Nothing is shareable</h3>
+  <p class="prose">Not one screen in the app is worth screenshotting, in a demographic whose primary mode of expression is screenshotting things. There is no artifact, no reveal, no moment worth sending to a group chat.</p>
+
+  <h4>One more thing, and it shapes everything</h4>
+  <p class="prose">The users are <strong>UPI-native Indians</strong>, not Americans, and that is a genuinely different animal. Bills, groceries and food eat 70%+ of Gen Z salaried spend. Quick-commerce spend runs about 3&times; that of older cohorts. 56% have missed a credit payment at least once. Rent and education payments run ~20% above other generations.</p>
+  <p class="prose">Translation: the defining spending behaviour is <em>Blinkit at 1am</em>, and the app currently has no opinion about it. It should have a very strong one.</p>
+</section>
+
+<!-- ============ CONCEPT ============ -->
+<section class="sec">
+  <span class="sec-tag">The idea</span>
+  <h2>Receipts</h2>
+  <p class="intro">Gen&nbsp;Z slang: <em>showing the receipts</em> means producing the evidence. That is exactly what the SMS parser already does &mdash; it quietly collects proof of where your money went, without being asked. The name does the positioning for free.</p>
+
+  <p class="prose">Three nouns carry the entire product. Learn these; they are the vocabulary for the code, the UI and the copy.</p>
+
+  <ul class="rule-list">
+    <li><span class="n">01</span><span><strong>Receipts</strong> &mdash; the transactions. Auto-captured, occasionally needing a nudge from you. This is <code>Transaction</code>; don't rename the class, just the user-facing word.</span></li>
+    <li><span class="n">02</span><span><strong>Drops</strong> &mdash; auto-generated insight cards, delivered like content rather than reporting. One fact, one number, one dry line. Share-ready by construction.</span></li>
+    <li><span class="n">03</span><span><strong>Stamps</strong> &mdash; collectible rubber-stamp achievements. Retrospective discoveries, not daily chores.</span></li>
+  </ul>
+
+  <p class="prose">Plus <strong>Goals</strong>, which are money you're aiming at rather than money you've spent &mdash; a Goa trip, a laptop, a phone. Visually a goal is a perforated ticket stub that fills with ink as you save. The metaphor holds: a goal is a receipt you haven't earned yet.</p>
+
+  <h3>The reframe that matters most</h3>
+  <p class="prose">The single highest-leverage change in this document, and it costs almost no code.</p>
+  <div class="no"><p><strong>Now:</strong> &ldquo;Left to spend today &#8377;264.16&rdquo; over a draining bar. Frame: depletion. You are losing.</p></div>
+  <div class="yes"><p><strong>New:</strong> &ldquo;&#8377;1,830 in &mdash; on pace&rdquo; over a pace rail with a marker for where you'd be if you were perfectly even. Frame: record. You are accumulating evidence.</p></div>
+  <p class="prose">Identical arithmetic. <code>dashboard()</code> doesn't change by one line. We show <em>spent-so-far</em> as the hero instead of <em>remaining</em>, and we express <code>safeTodayMinor</code> as a position relative to an even-pace marker rather than as a shrinking allowance.</p>
+  <p class="prose">There are three pace states, and they are the app's only judgement. Note that none of them praise or scold &mdash; they report.</p>
+
+  <div class="scroll"><table>
+    <thead><tr><th>State</th><th>Condition</th><th class="mono">Colour</th><th>Line</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Under</strong></td><td>spent &lt; 92% of even-pace</td><td class="mono">Ultramarine</td><td>&ldquo;under pace&rdquo;</td></tr>
+      <tr><td><strong>On</strong></td><td>92&ndash;108% of even-pace</td><td class="mono">Ink</td><td>&ldquo;on pace&rdquo;</td></tr>
+      <tr><td><strong>Over</strong></td><td>spent &gt; 108% of even-pace</td><td class="mono">Chilli</td><td>&ldquo;ahead of pace&rdquo;</td></tr>
+    </tbody>
+  </table></div>
+  <p class="prose"><em>&ldquo;Ahead of pace&rdquo;</em> rather than <em>&ldquo;over budget&rdquo;</em> is deliberate. It's factually precise, it's not an accusation, and it leaves room for the user to decide whether they care.</p>
+</section>
+
+<!-- ============ NOT ONE GEN Z ============ -->
+<section class="sec">
+  <span class="sec-tag">Who this is for</span>
+  <h2>There is no such thing as &ldquo;the Gen&nbsp;Z user&rdquo;</h2>
+  <p class="intro">A 19-year-old on an irregular allowance from home, a 24-year-old two years into a salaried job, and a 22-year-old freelancer paid in lumps have almost nothing in common financially. Designing one home screen for all three produces something that fits none of them. This section is load-bearing &mdash; build it before you build anything in the Screens section.</p>
+
+  <p class="prose">We handle this with <strong>two onboarding questions</strong>, not a wall of settings. Both are changeable later, and both genuinely reconfigure the app rather than just re-labelling it.</p>
+
+  <h3>Question one: money rhythm</h3>
+  <p class="prose">This decides how <code>budgetRange()</code> behaves. Your <code>Budget.period</code> field already supports <code>Week</code>, <code>Month</code> and <code>Custom</code>, so two of these are nearly free.</p>
+
+  <div class="scroll"><table>
+    <thead><tr><th>Rhythm</th><th>Who</th><th class="mono">period</th><th>What changes</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Monthly</strong></td><td>Salaried. Money lands on the 1st.</td><td class="mono">"Month"</td><td>Current behaviour. Period resets on a chosen day of month (add a <code>resetDay</code> field &mdash; not everyone is paid on the 1st).</td></tr>
+      <tr><td><strong>Weekly</strong></td><td>Students on weekly allowance, gig workers paid weekly.</td><td class="mono">"Week"</td><td>Already works. Make it a first-class onboarding option instead of buried in the budget sheet.</td></tr>
+      <tr><td><strong>Irregular</strong></td><td>Freelancers, students on ad-hoc money from home, anyone whose income is lumpy.</td><td class="mono">"Rolling"</td><td><strong>New.</strong> No period at all. A rolling trailing 30 days. Pace is measured against your own trailing average, not a budget you set once and can't meet.</td></tr>
+    </tbody>
+  </table></div>
+
+  <p class="prose"><strong>Irregular is the important one and it's the one you'd skip.</strong> A large share of Indian Gen Z has no fixed monthly income, and every budgeting app on the store silently assumes they do. Handling it well is a genuine differentiator and it's maybe 80 lines.</p>
+
+  <pre><code>// Models.kt — extend, don't replace
+"Rolling" -&gt; BudgetRange(today.minusDays(29), today)
+
+// For Rolling, the pace baseline is the user's own trailing median
+// daily spend over the prior 60 days — not budget.amountMinor / days.
+// Budget becomes optional; if unset, Rolling mode shows no pace state,
+// only the trailing figure and Drops.</code></pre>
+
+  <h3>Question two: what do you want from this</h3>
+  <p class="prose">Three modes. Each swaps <strong>the hero block on Today and nothing else</strong> &mdash; same tabs, same tokens, same components. This is deliberately cheap to build: one <code>when</code> over a sealed type at the top of the Today screen.</p>
+
+  <div class="scroll"><table>
+    <thead><tr><th>Mode</th><th>Picked by</th><th>Today's hero</th><th>Alerts</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Chill</strong></td><td>&ldquo;I just want to know where it goes.&rdquo; No budget, no judgement. Expect this to be more popular than you think.</td><td>Spent this month, big. No pace rail, no budget, no colour states.</td><td>None except review nudges.</td></tr>
+      <tr><td><strong>Pace</strong></td><td>&ldquo;Stop me going over.&rdquo; The default, and what most of this doc describes.</td><td>Spent + pace rail + pace state.</td><td>Category limits, over-pace.</td></tr>
+      <tr><td><strong>Stack</strong></td><td>&ldquo;I'm saving for something.&rdquo; Goa trip, laptop, phone, moving out.</td><td>Top goal's ticket stub, filling. Spending shown underneath as what's left after saving.</td><td>Goal milestones only.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="yes"><p><strong>Default to Chill for anyone who skips onboarding.</strong> The least judgemental mode is the safest place to land someone you know nothing about. They can move up when they want to.</p></div>
+
+  <h3>Loud and Quiet</h3>
+  <p class="prose">The maximalist/minimalist split is real, but it does <em>not</em> justify two design systems. It's one amplitude variable over the same tokens.</p>
+
+  <div class="scroll"><table>
+    <thead><tr><th>&nbsp;</th><th>Loud <span class="lab">(default)</span></th><th>Quiet</th></tr></thead>
+    <tbody>
+      <tr><td>Hero size</td><td class="mono">56sp / wdth 125</td><td class="mono">34sp / wdth 100</td></tr>
+      <tr><td>Drops in Feed</td><td>As generated, up to 3/day</td><td>Batched, 3/week max</td></tr>
+      <tr><td>Stamp earned</td><td>Full-screen stamp-press moment + haptic</td><td>Silent. Appears in the grid, no interruption.</td></tr>
+      <tr><td>Accent use</td><td>Chilli section tags, chrome goal fills</td><td>Ink only; accents reserved for state</td></tr>
+      <tr><td>Wrapped</td><td>Auto-opens on the 1st</td><td>Waits in Feed</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Not everyone's bank sends parsable SMS</h3>
+  <p class="prose">The current app treats SMS as the main path and manual entry as a fallback, and it shows &mdash; manual add is a form with two text fields. But plenty of users bank somewhere your regexes don't cover, or have SMS permissions off for good reasons, or are on a phone where the messages just don't arrive.</p>
+  <p class="prose"><strong>The manual path must be as fast as the automatic one is invisible.</strong> That's what the amount-pad in the Screens section is for &mdash; a receipt added by hand should take under three seconds and zero typed words. If manual entry is good enough, SMS permission becomes a genuine convenience rather than a hostage negotiation.</p>
+
+  <h3>Covering everyone includes disabled users</h3>
+  <p class="prose">This is part of the same note and it's the part that usually gets dropped. It is not optional, and retrofitting it costs five times what building it in does.</p>
+  <ul class="rule-list">
+    <li><span class="n">01</span><span><strong>Never encode state in colour alone.</strong> The three pace states each get a distinct word (<em>under / on / ahead</em>) and a distinct marker position. Around 1 in 12 men has some colour vision deficiency, and our under-state blue and over-state red are exactly the pair that fails. The word is the real signal; the colour is reinforcement.</span></li>
+    <li><span class="n">02</span><span><strong>Respect the system font scale.</strong> Use <code>sp</code> for all text, never <code>dp</code>. Test every screen at 200%. The hero number is allowed to shrink; nothing is allowed to clip or overlap.</span></li>
+    <li><span class="n">03</span><span><strong>Touch targets are 48dp minimum</strong>, including the swipe-card action buttons and the numpad keys.</span></li>
+    <li><span class="n">04</span><span><strong>Every icon-only control gets a <code>contentDescription</code>.</strong> The gear, the close buttons, the category marks (read the full category name, not &ldquo;FD&rdquo;).</span></li>
+    <li><span class="n">05</span><span><strong>Honour reduced-motion.</strong> Check <code>Settings.Global.ANIMATOR_DURATION_SCALE</code>; when it's 0, skip the number roll, the stamp press and the receipt-print animation. Show end states instantly.</span></li>
+    <li><span class="n">06</span><span><strong>Contrast:</strong> all body text hits 4.5:1 against its ground, all large text 3:1. Chrome yellow on Paper fails badly &mdash; that's why Chrome is only ever a <em>fill</em> with Ink on top, never text on Paper.</span></li>
+  </ul>
+</section>
+
+<!-- ============ DESIGN SYSTEM ============ -->
+<section class="sec">
+  <span class="sec-tag">Design system</span>
+  <h2>Paper, ink, and Indian signage</h2>
+  <p class="intro">Every finance app is a dark glass slab. This one is paper &mdash; warm ledger stock, near-black ink, and the high-chroma palette of Indian shop signage: ultramarine, chrome yellow, chilli red. It is on-metaphor, it's culturally specific to the people using it, and it will not be mistaken for anything else on the store.</p>
+
+  <p class="prose"><strong>The app is light-first.</strong> That is a deliberate risk and I want you to hold it rather than quietly drift dark. A dark theme is specified below and must work, but light is the default and the one we design against.</p>
+
+  <h3>Colour tokens</h3>
+  <p class="prose">This is the complete palette. <strong>There are no other colours in the app.</strong> If you need one that isn't here, that's a conversation, not a decision.</p>
+
+  <div class="scroll"><table>
+    <thead><tr><th>Token</th><th class="mono">Light</th><th class="mono">Dark</th><th>Used for</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Paper</strong></td><td class="mono"><span class="sw" style="background:#E9E7DE"></span>#E9E7DE</td><td class="mono"><span class="sw" style="background:#131618"></span>#131618</td><td>App background</td></tr>
+      <tr><td><strong>PaperRaised</strong></td><td class="mono"><span class="sw" style="background:#E2DFD4"></span>#E2DFD4</td><td class="mono"><span class="sw" style="background:#1A1E20"></span>#1A1E20</td><td>Cards, sheets, inputs</td></tr>
+      <tr><td><strong>Ink</strong></td><td class="mono"><span class="sw" style="background:#15181A"></span>#15181A</td><td class="mono"><span class="sw" style="background:#E7E5DC"></span>#E7E5DC</td><td>Primary text, hero numbers, filled rails</td></tr>
+      <tr><td><strong>InkSoft</strong></td><td class="mono"><span class="sw" style="background:#3C4241"></span>#3C4241</td><td class="mono"><span class="sw" style="background:#BEC0B7"></span>#BEC0B7</td><td>Body text</td></tr>
+      <tr><td><strong>Fade</strong></td><td class="mono"><span class="sw" style="background:#6E736B"></span>#6E736B</td><td class="mono"><span class="sw" style="background:#8A8F87"></span>#8A8F87</td><td>Labels, metadata, inactive tabs</td></tr>
+      <tr><td><strong>Rule</strong></td><td class="mono"><span class="sw" style="background:#CFCCBF"></span>#CFCCBF</td><td class="mono"><span class="sw" style="background:#2A2F31"></span>#2A2F31</td><td>Hairlines, dividers</td></tr>
+      <tr><td><strong>RuleHard</strong></td><td class="mono"><span class="sw" style="background:#B3AF9F"></span>#B3AF9F</td><td class="mono"><span class="sw" style="background:#414749"></span>#414749</td><td>Perforations, borders, empty rails</td></tr>
+      <tr><td><strong>Ultramarine</strong></td><td class="mono"><span class="sw" style="background:#2B3FD9"></span>#2B3FD9</td><td class="mono"><span class="sw" style="background:#8B97FF"></span>#8B97FF</td><td>Interactive, links, under-pace, money in</td></tr>
+      <tr><td><strong>Chrome</strong></td><td class="mono"><span class="sw" style="background:#F5C518"></span>#F5C518</td><td class="mono"><span class="sw" style="background:#F2C630"></span>#F2C630</td><td>Goals, highlights, Wrapped</td></tr>
+      <tr><td><strong>Chilli</strong></td><td class="mono"><span class="sw" style="background:#DC3B23"></span>#DC3B23</td><td class="mono"><span class="sw" style="background:#FF6B52"></span>#FF6B52</td><td>Stamps, over-pace, alerts, brand mark</td></tr>
+    </tbody>
+  </table></div>
+
+  <p class="prose">Category colours are separate and already exist in <code>Models.kt</code>. <strong>Replace those 25 values</strong> &mdash; the current set is muted-desaturated to suit the old dark theme and will look like mud on paper. New values in the Categories section below.</p>
+
+  <div class="no"><p><strong>Never:</strong> add a colour inline in a composable. Every colour comes from the token object. If you type <code>Color(0xFF...)</code> anywhere outside <code>ui/Tokens.kt</code>, that's a bug.</p></div>
+
+  <h3>Typography</h3>
+  <p class="prose">Three faces, three jobs. All are on Google Fonts with variable TTFs &mdash; download the variable files and drop them in <code>res/font/</code> exactly as you did with Inter and Space Grotesk. Both existing fonts are removed.</p>
+
+  <div class="scroll"><table>
+    <thead><tr><th>Face</th><th>Role</th><th class="mono">File</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Archivo</strong></td><td>Display, hero numbers, headings, buttons</td><td class="mono">archivo_variable.ttf</td><td>Has a width axis. We use it. Hero numbers are <code>wdth 125</code> &mdash; that expanded cut is most of the app's character.</td></tr>
+      <tr><td><strong>Instrument Sans</strong></td><td>Body, transaction names, descriptions</td><td class="mono">instrument_sans_variable.ttf</td><td>Slightly quirky grotesque. Not Inter, on purpose.</td></tr>
+      <tr><td><strong>Spline Sans Mono</strong></td><td>All labels, all amounts, receipt rows, stamps</td><td class="mono">spline_sans_mono_variable.ttf</td><td>Every rupee figure in the app is mono and tabular. Non-negotiable &mdash; it's what makes the lists read as receipts.</td></tr>
+    </tbody>
+  </table></div>
+
+  <p class="prose">Compose doesn't expose variation axes as cleanly as CSS. For the expanded hero cut, use <code>FontVariation.Settings(FontVariation.width(125f), FontVariation.weight(900))</code> with <code>Font(R.font.archivo_variable, variationSettings = ...)</code> &mdash; available since API 26, which matches your <code>minSdk</code>.</p>
+
+  <h4>Type scale &mdash; the complete set</h4>
+  <div class="scroll"><table>
+    <thead><tr><th>Name</th><th>Face</th><th class="mono">Size / LH</th><th class="mono">Weight / Width</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">hero</td><td>Archivo</td><td class="mono">56 / 48</td><td class="mono">900 / 125</td><td>The one number on Today</td></tr>
+      <tr><td class="mono">display</td><td>Archivo</td><td class="mono">34 / 36</td><td class="mono">800 / 118</td><td>Drop headline number, Wrapped</td></tr>
+      <tr><td class="mono">title</td><td>Archivo</td><td class="mono">22 / 26</td><td class="mono">800 / 112</td><td>Screen titles, sheet titles</td></tr>
+      <tr><td class="mono">heading</td><td>Archivo</td><td class="mono">17 / 22</td><td class="mono">700 / 105</td><td>Card headings, goal names</td></tr>
+      <tr><td class="mono">body</td><td>Instrument Sans</td><td class="mono">15 / 22</td><td class="mono">400</td><td>Everything readable</td></tr>
+      <tr><td class="mono">bodyStrong</td><td>Instrument Sans</td><td class="mono">15 / 22</td><td class="mono">600</td><td>Merchant names in lists</td></tr>
+      <tr><td class="mono">amount</td><td>Spline Sans Mono</td><td class="mono">15 / 20</td><td class="mono">600, tabular</td><td>Every &#8377; figure in a list</td></tr>
+      <tr><td class="mono">meta</td><td>Instrument Sans</td><td class="mono">13 / 18</td><td class="mono">400</td><td>Category + time under a merchant</td></tr>
+      <tr><td class="mono">label</td><td>Spline Sans Mono</td><td class="mono">11 / 14</td><td class="mono">600, +0.16em, UPPER</td><td>Section eyebrows, tabs, chips</td></tr>
+      <tr><td class="mono">stamp</td><td>Spline Sans Mono</td><td class="mono">10 / 13</td><td class="mono">700, +0.10em, UPPER</td><td>Stamp faces only</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="no"><p><strong>Never:</strong> use more than two weights of the same face on one screen. Never use a size not in this table. If a thing looks wrong at these sizes the fix is spacing, not a new size.</p></div>
+
+  <h3>Space, shape, elevation</h3>
+  <p class="prose">Spacing is a 4dp scale: <code>4 · 8 · 12 · 16 · 24 · 32 · 48 · 64</code>. Nothing between. Screen horizontal padding is <strong>20dp</strong> everywhere, no exceptions, so every screen's left edge lines up when you swipe between tabs.</p>
+  <p class="prose">Three radii only: <strong>0dp</strong> (rails, dividers, full-bleed), <strong>4dp</strong> (cards, inputs, chips, stamps), <strong>99dp</strong> (pace rail, pills, avatars). A 12dp or 16dp radius anywhere is a bug.</p>
+
+  <div class="no">
+    <p><strong>No drop shadows. Anywhere.</strong> This is paper, and paper doesn't float. Depth comes from three things only: a 1dp <code>Rule</code> hairline, a fill change to <code>PaperRaised</code>, and dashed <code>RuleHard</code> perforations. If you find yourself reaching for <code>elevation</code> or <code>shadow()</code>, use a hairline instead.</p>
+  </div>
+
+  <p class="prose">The perforation is the app's signature device &mdash; a 1.5dp dashed <code>RuleHard</code> line, 4dp dash / 4dp gap. Use it wherever a receipt would tear: between the total and the commentary on a Drop, between a goal's progress and its actions, above the tab bar on Today. Use it sparingly enough that it stays special &mdash; at most twice per screen.</p>
+
+  <h3>Category marks</h3>
+  <p class="prose">No emoji. Emoji as category icons is the single fastest way to make an app look generated, and it's in seven of the eight references we looked at. But custom illustration isn't realistic either.</p>
+  <p class="prose">So: <strong>a two-letter monogram</strong> &mdash; 20dp rounded square (4dp radius), filled with the category colour, two uppercase letters in Spline Sans Mono 700 at 9sp, in white or Ink depending on the fill's luminance. Cheap, consistent, and it looks like a deliberate system rather than a shortcut.</p>
+  <pre><code>fun categoryMark(c: Category): String = when (c.id) {
+    "food" -&gt; "FD";  "groceries" -&gt; "GR"; "shopping" -&gt; "SH"
+    "transport" -&gt; "TR"; "bills" -&gt; "BL"; "transfers" -&gt; "TF"
+    "medical" -&gt; "MD"; "travel" -&gt; "TV"; "rent" -&gt; "RN"
+    // ...one per category, always two chars
+    else -&gt; c.name.take(2).uppercase()
+}
+
+// Contrast rule — no guessing:
+fun onCategory(color: Long): Color =
+    if (luminance(color) &gt; 0.55f) Ink else Color.White</code></pre>
+</section>
+
+<!-- ============ VOICE ============ -->
+<section class="sec">
+  <span class="sec-tag">Voice</span>
+  <h2>Deadpan, never parental</h2>
+  <p class="intro">The app states facts with a flat affect and lets the number carry the drama. It is dry, occasionally funny, and it never once tells you how to feel about your own money. This is where most finance apps for this audience fall apart, so the rules are strict.</p>
+
+  <ul class="rule-list">
+    <li><span class="n">01</span><span><strong>No exclamation marks.</strong> Anywhere in the app. Not one.</span></li>
+    <li><span class="n">02</span><span><strong>No emoji in system copy.</strong> User-typed notes can contain whatever they like.</span></li>
+    <li><span class="n">03</span><span><strong>No praise and no scolding.</strong> Never &ldquo;You're doing great&rdquo;, never &ldquo;Keep it up&rdquo;, never &ldquo;too much&rdquo;, &ldquo;overspending&rdquo;, &ldquo;you should&rdquo;. Praise loops burn out in about three weeks and scolding burns out faster.</span></li>
+    <li><span class="n">04</span><span><strong>Second person, short sentences.</strong> Under 12 words where possible.</span></li>
+    <li><span class="n">05</span><span><strong>Humour lives in Drops only.</strong> Never in errors, settings, permissions or money-in confirmations. A joke next to a failure is hostile.</span></li>
+    <li><span class="n">06</span><span><strong>Numbers are never softened.</strong> &#8377;1,830 is &#8377;1,830, not &ldquo;about &#8377;1.8k&rdquo; &mdash; except in charts where space genuinely forces it.</span></li>
+  </ul>
+
+  <h4>Banned strings &mdash; grep for these before every release</h4>
+  <p class="prose"><code>Oops</code> &middot; <code>Uh oh</code> &middot; <code>Great job</code> &middot; <code>You're doing great</code> &middot; <code>Keep it up</code> &middot; <code>Well done</code> &middot; <code>spending spree</code> &middot; <code>budget buster</code> &middot; <code>treat yourself</code> &middot; <code>Let's</code> &middot; <code>Ready to</code> &middot; any <code>!</code> &middot; any emoji in a hardcoded string.</p>
+
+  <h4>Rewrites &mdash; every string currently in the app</h4>
+  <div class="scroll"><table>
+    <thead><tr><th>Now</th><th>New</th></tr></thead>
+    <tbody>
+      <tr><td>Left to spend today</td><td>Spent this month <span class="lab">(label above hero)</span></td></tr>
+      <tr><td>&#8377;1,830 of &#8377;5,000 spent &middot; 12 days left</td><td>on pace &middot; &#8377;264 a day holds this &middot; 12 days left</td></tr>
+      <tr><td>2 need a category</td><td>2 receipts need you</td></tr>
+      <tr><td>WHERE IT'S GOING</td><td>WHERE IT WENT</td></tr>
+      <tr><td>RECENT</td><td>TODAY <span class="lab">(or the actual date)</span></td></tr>
+      <tr><td>Add manually</td><td>New receipt</td></tr>
+      <tr><td>Merchant or payee</td><td>Who got it</td></tr>
+      <tr><td>Save transaction</td><td>Save</td></tr>
+      <tr><td>Money in</td><td>Money in <span class="lab">(keep — it's good)</span></td></tr>
+      <tr><td>You've spent &#8377;1,830 this month, leaving &#8377;3,170 in your budget.</td><td><em>Delete.</em> Replaced entirely by Drops.</td></tr>
+      <tr><td>Average confirmed debit</td><td><em>Delete.</em></td></tr>
+      <tr><td>Transactions tracked</td><td>Receipts collected <span class="lab">(moves to Goals tab, next to Stamps)</span></td></tr>
+      <tr><td>Largest category</td><td><em>Delete.</em> Becomes a Drop.</td></tr>
+      <tr><td>&#8377;1,000 received from Money received &mdash; resolve</td><td>&#8377;1,000 landed. Refund, or money in?</td></tr>
+      <tr><td>SIGNALS</td><td><em>Delete the whole section.</em></td></tr>
+      <tr><td>Budget</td><td>Budget <span class="lab">(keep)</span></td></tr>
+      <tr><td>Timeline</td><td>Ledger</td></tr>
+      <tr><td>Insights</td><td>Feed</td></tr>
+      <tr><td>Settings</td><td><em>Gone from the tab bar</em> — gear icon, top-right of Today</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>Empty states</h4>
+  <p class="prose">These matter more than you'd think &mdash; a new user sees three of them before they see any data.</p>
+  <ul class="plain">
+    <li><strong>No receipts yet:</strong> &ldquo;Nothing yet. Pay for something and this fills itself in.&rdquo;</li>
+    <li><strong>Review queue empty:</strong> &ldquo;Nothing needs you. Clean.&rdquo;</li>
+    <li><strong>No Drops yet:</strong> &ldquo;Give it a week. Drops need something to notice.&rdquo;</li>
+    <li><strong>No goals:</strong> &ldquo;Nothing saved for yet. What are you after?&rdquo;</li>
+    <li><strong>No stamps:</strong> &ldquo;24 to collect. You'll get them by living your life.&rdquo;</li>
+    <li><strong>SMS permission refused:</strong> &ldquo;Without SMS you'll add receipts by hand. That works, it's just slower.&rdquo; <span class="lab">— no guilt, no re-ask, no dark pattern</span></li>
+  </ul>
+</section>
+
+<!-- ============ SCREENS ============ -->
+<section class="sec">
+  <span class="sec-tag">Screens</span>
+  <h2>Four tabs, six surfaces</h2>
+  <p class="intro">Tab bar is <strong>Today &middot; Feed &middot; Goals &middot; Ledger</strong>. Settings leaves the tab bar entirely and becomes a gear in Today's top-right &mdash; it's a once-a-month screen and it was taking a quarter of the most valuable navigation in the app.</p>
+  <p class="prose">The mockups below are built to the exact tokens and type scale specified above. They are the target, not a suggestion. Where a mockup and this prose disagree, the prose wins.</p>
+
+  <div class="rack">
+
+    <div class="spec">
+      <div class="phone">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-family:'Archivo',sans-serif;font-weight:900;font-variation-settings:'wdth' 125;font-size:11px;letter-spacing:-.02em">RECEIPTS</span>
+          <span style="color:#6E736B;font-size:11px">&#9881;</span>
+        </div>
+        <hr>
+        <div class="pl">August &middot; day 20 of 31</div>
+        <div class="pl" style="margin-top:9px">Spent this month</div>
+        <div class="big" style="margin:3px 0 10px">&#8377;1,830</div>
+        <div class="railbar"><i style="width:37%"></i><u style="left:64%"></u></div>
+        <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:8px;color:#6E736B">
+          <span><b style="color:#15181A">on pace</b> &middot; <span class="num">&#8377;264</span>/day holds this</span>
+          <span class="num">12 left</span>
+        </div>
+        <div class="perf"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:8.5px"><b>2 receipts</b> need you</span>
+          <span class="pill" style="background:#DC3B23;color:#fff">Review</span>
+        </div>
+        <hr>
+        <div class="pl">Today</div>
+        <div class="row"><span class="mono2" style="background:#D9822B">FD</span><span class="gr"><b>biryani</b></span><span class="amt">&#8722;240</span></div>
+        <div class="row"><span class="mono2" style="background:#3E7D5A">GR</span><span class="gr"><b>Blinkit</b></span><span class="amt">&#8722;163</span></div>
+        <div class="row"><span class="mono2" style="background:#D9822B">FD</span><span class="gr"><b>snacks</b></span><span class="amt">&#8722;27</span></div>
+        <hr>
+        <div class="pl">Where it went</div>
+        <div style="display:flex;gap:5px;margin-top:6px">
+          <div style="flex:868;height:5px;background:#B5478A"></div>
+          <div style="flex:440;height:5px;background:#2F6FA8"></div>
+          <div style="flex:382;height:5px;background:#D9822B"></div>
+          <div style="flex:140;height:5px;background:#8A8F87"></div>
+        </div>
+        <div class="tabs"><span class="on">Today</span><span>Feed</span><span>Goals</span><span>Ledger</span></div>
+      </div>
+      <p class="cap"><b>Today &mdash; Pace mode</b>Hero is spent-so-far, not remaining. The tick on the rail is even-pace; you are behind it. No greeting line &mdash; it costs the best row on the screen to say nothing.</p>
+    </div>
+
+    <div class="spec">
+      <div class="phone">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="mid" style="font-size:19px">Feed</span>
+          <span class="pl">3 new</span>
+        </div>
+        <hr>
+        <div style="border:1px solid #CFCCBF;border-radius:4px;padding:10px;background:#E2DFD4">
+          <div class="pl" style="color:#DC3B23">The 1am tax</div>
+          <div class="big" style="font-size:30px;margin:6px 0 4px">&#8377;640</div>
+          <div style="font-size:9px;line-height:1.45">of your month happened after midnight. Nine orders. Blinkit took six of them.</div>
+          <div class="perf" style="margin:9px 0"></div>
+          <div style="display:flex;gap:6px">
+            <span class="pill" style="border:1px solid #15181A">Share</span>
+            <span class="pill" style="color:#6E736B">Not useful</span>
+          </div>
+        </div>
+        <div style="border:1px solid #CFCCBF;border-radius:4px;padding:10px;margin-top:8px">
+          <div class="pl">Small stuff</div>
+          <div class="mid" style="font-size:21px;margin:5px 0 4px">47 receipts under &#8377;100</div>
+          <div style="font-size:9px;line-height:1.45">add up to <b>&#8377;1,890</b>. That's your biggest category and it doesn't have a name.</div>
+        </div>
+        <div style="border:1px solid #CFCCBF;border-radius:4px;padding:10px;margin-top:8px">
+          <div class="pl">Saturday</div>
+          <div class="mid" style="font-size:21px;margin:5px 0 4px">is your most expensive personality</div>
+          <div style="font-size:9px;line-height:1.45">&#8377;612 average. Tuesday manages &#8377;94.</div>
+        </div>
+        <div class="tabs"><span>Today</span><span class="on">Feed</span><span>Goals</span><span>Ledger</span></div>
+      </div>
+      <p class="cap"><b>Feed &mdash; Drops</b>The old Insights tab, rebuilt as content. One fact, one number, one dry line. Every card is sized to screenshot cleanly.</p>
+    </div>
+
+    <div class="spec">
+      <div class="phone">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="mid" style="font-size:19px">Review</span>
+          <span class="pl">2 left</span>
+        </div>
+        <div style="position:relative;margin-top:14px">
+          <div style="position:absolute;inset:8px -5px -8px 5px;border:1px solid #CFCCBF;border-radius:4px;background:#E2DFD4"></div>
+          <div style="position:relative;border:1px solid #15181A;border-radius:4px;padding:12px;background:#E9E7DE">
+            <div class="pl">Slice &middot; 20 Aug, 1:14 am</div>
+            <div class="big" style="font-size:32px;margin:7px 0 3px">&#8377;163</div>
+            <div style="font-size:10px"><b>BLINKIT COMMERCE</b></div>
+            <div class="perf" style="margin:10px 0"></div>
+            <div class="pl" style="margin-bottom:6px">Best guess</div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span class="mono2" style="background:#3E7D5A">GR</span>
+              <span style="font-size:9.5px"><b>Groceries</b></span>
+            </div>
+            <div style="font-size:8px;color:#6E736B;margin-top:9px;font-style:italic">Swipe right to keep &middot; left to ignore</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:14px">
+          <div style="flex:1;text-align:center;border:1px solid #CFCCBF;border-radius:4px;padding:7px 0;font-size:8px;color:#6E736B">&#8592; Ignore</div>
+          <div style="flex:1;text-align:center;border:1px solid #2B3FD9;color:#2B3FD9;border-radius:4px;padding:7px 0;font-size:8px">&#8593; Refund</div>
+          <div style="flex:1;text-align:center;background:#15181A;color:#E9E7DE;border-radius:4px;padding:7px 0;font-size:8px">Keep &#8594;</div>
+        </div>
+        <div style="margin-top:12px;font-size:8px;color:#6E736B;text-align:center">Change the category by tapping it</div>
+        <div class="tabs"><span class="on">Today</span><span>Feed</span><span>Goals</span><span>Ledger</span></div>
+      </div>
+      <p class="cap"><b>Review &mdash; the card stack</b>The single highest-friction flow in the app today, rebuilt as a swipe deck. This is the interaction people will describe to their friends.</p>
+    </div>
+
+  </div>
+
+  <div class="rack" style="margin-top:38px">
+
+    <div class="spec">
+      <div class="phone">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="mid" style="font-size:19px">New receipt</span>
+          <span style="color:#6E736B;font-size:11px">&#215;</span>
+        </div>
+        <div style="text-align:right;margin:16px 0 4px">
+          <span class="big" style="font-size:42px">&#8377;240</span>
+        </div>
+        <div style="display:flex;gap:5px;justify-content:flex-end">
+          <span class="pill" style="background:#15181A;color:#E9E7DE">Spent</span>
+          <span class="pill" style="border:1px solid #CFCCBF;color:#6E736B">Money in</span>
+        </div>
+        <hr>
+        <div style="display:flex;gap:5px;overflow:hidden">
+          <span class="pill" style="border:1px solid #15181A">FD Food</span>
+          <span class="pill" style="border:1px solid #CFCCBF;color:#6E736B">GR</span>
+          <span class="pill" style="border:1px solid #CFCCBF;color:#6E736B">TR</span>
+          <span class="pill" style="border:1px solid #CFCCBF;color:#6E736B">SH</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:10px">
+          <div class="key">1</div><div class="key">2</div><div class="key">3</div>
+          <div class="key">4</div><div class="key">5</div><div class="key">6</div>
+          <div class="key">7</div><div class="key">8</div><div class="key">9</div>
+          <div class="key" style="font-size:9px;color:#6E736B">note</div><div class="key">0</div><div class="key">&#9003;</div>
+        </div>
+        <div style="background:#15181A;color:#E9E7DE;border-radius:4px;text-align:center;padding:9px 0;margin-top:8px;font-family:'Archivo',sans-serif;font-weight:700;font-size:11px">Save</div>
+        <div class="tabs" style="border:none"><span>&nbsp;</span></div>
+      </div>
+      <p class="cap"><b>Add &mdash; amount first</b>No text fields. Amount, direction, category, done &mdash; under three seconds, zero typed words. &ldquo;Who got it&rdquo; is optional and hides behind <em>note</em>.</p>
+    </div>
+
+    <div class="spec">
+      <div class="phone">
+        <div class="mid" style="font-size:19px">Goals</div>
+        <hr>
+        <div style="border:1px solid #CFCCBF;border-radius:4px;overflow:hidden">
+          <div style="padding:10px 10px 8px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <span style="font-family:'Archivo',sans-serif;font-weight:700;font-size:12px">Goa, December</span>
+              <span class="pl">50%</span>
+            </div>
+            <div class="big" style="font-size:26px;margin:6px 0 2px">&#8377;7,500</div>
+            <div class="pl">of &#8377;15,000</div>
+            <div class="railbar" style="margin-top:8px;background:#DCD8CB"><i style="width:50%;background:#F5C518"></i></div>
+          </div>
+          <div class="perf" style="margin:0"></div>
+          <div style="padding:7px 10px;display:flex;justify-content:space-between;font-size:8px;color:#6E736B">
+            <span>&#8377;1,875/month to make it</span><span style="color:#2B3FD9">Add &#8377;</span>
+          </div>
+        </div>
+        <div style="border:1px solid #CFCCBF;border-radius:4px;padding:10px;margin-top:8px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <span style="font-family:'Archivo',sans-serif;font-weight:700;font-size:12px">Laptop</span>
+            <span class="pl">18%</span>
+          </div>
+          <div class="railbar" style="margin-top:8px;background:#DCD8CB"><i style="width:18%;background:#F5C518"></i></div>
+        </div>
+        <hr>
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="pl">Stamps</span><span class="pl">7 / 24</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:7px">
+          <div class="stamp"><b>NIGHT<br>OWL</b>&#8377;500 after 12</div>
+          <div class="stamp"><b>CLEAN<br>SLATE</b>queue at zero</div>
+          <div class="stamp"><b>SEVEN</b>7 days under</div>
+          <div class="stamp off"><b>UNDER</b>a whole month</div>
+          <div class="stamp off"><b>ONE<br>TRICK</b>locked</div>
+          <div class="stamp off"><b>&#8377;1L</b>locked</div>
+        </div>
+        <div class="tabs"><span>Today</span><span>Feed</span><span class="on">Goals</span><span>Ledger</span></div>
+      </div>
+      <p class="cap"><b>Goals &amp; Stamps</b>A goal is a ticket stub that fills with chrome. Stamps sit underneath &mdash; earned ones in chilli, locked ones dashed and grey.</p>
+    </div>
+
+    <div class="spec">
+      <div class="phone">
+        <div class="mid" style="font-size:19px">Ledger</div>
+        <div style="border:1px solid #CFCCBF;border-radius:4px;padding:6px 9px;margin-top:9px;font-size:9px;color:#6E736B">Search receipts</div>
+        <div style="display:flex;gap:5px;margin-top:7px;overflow:hidden">
+          <span class="pill" style="background:#15181A;color:#E9E7DE">All</span>
+          <span class="pill" style="border:1px solid #CFCCBF;color:#6E736B">Food</span>
+          <span class="pill" style="border:1px solid #CFCCBF;color:#6E736B">Shop</span>
+          <span class="pill" style="border:1px solid #CFCCBF;color:#6E736B">In</span>
+        </div>
+        <hr>
+        <div class="pl">Wed 20 Aug &middot; <span class="num">&#8377;430</span></div>
+        <div class="row"><span class="mono2" style="background:#D9822B">FD</span><span class="gr"><b>biryani</b><br><span style="font-size:7.5px;color:#6E736B">Food &middot; 9:14 pm</span></span><span class="amt">&#8722;240</span></div>
+        <div class="row"><span class="mono2" style="background:#3E7D5A">GR</span><span class="gr"><b>Blinkit</b><br><span style="font-size:7.5px;color:#6E736B">Groceries &middot; 1:14 am</span></span><span class="amt">&#8722;163</span></div>
+        <div class="row"><span class="mono2" style="background:#D9822B">FD</span><span class="gr"><b>snacks</b><br><span style="font-size:7.5px;color:#6E736B">Food &middot; 4:02 pm</span></span><span class="amt">&#8722;27</span></div>
+        <hr>
+        <div class="pl">Tue 19 Aug &middot; <span class="num">&#8377;1,240</span></div>
+        <div class="row"><span class="mono2" style="background:#B5478A">SH</span><span class="gr"><b>Amazon</b><br><span style="font-size:7.5px;color:#6E736B">Shopping &middot; 7:31 pm</span></span><span class="amt">&#8722;1,240</span></div>
+        <hr>
+        <div class="pl">Mon 18 Aug</div>
+        <div class="row"><span class="mono2" style="background:#3E7D5A;background:#2B3FD9">TF</span><span class="gr"><b>from N. Subbanna</b><br><span style="font-size:7.5px;color:#6E736B">Money in &middot; 11:02 am</span></span><span class="amt" style="color:#2B3FD9">+20</span></div>
+        <div class="tabs"><span>Today</span><span>Feed</span><span>Goals</span><span class="on">Ledger</span></div>
+      </div>
+      <p class="cap"><b>Ledger</b>The utility screen. Day-grouped with a day total, searchable, filterable. Deliberately the plainest surface in the app &mdash; people come here to find one thing.</p>
+    </div>
+
+  </div>
+
+  <h3>Today, in the other two modes</h3>
+  <p class="prose">Only the block between the date label and the first perforation changes. Everything below it is identical.</p>
+  <ul class="plain">
+    <li><strong>Chill:</strong> label <em>&ldquo;Spent this month&rdquo;</em>, hero &#8377;1,830, and underneath a single mono line: <em>&ldquo;&#8377;1,412 last August&rdquo;</em>. No rail, no state, no colour. That's the whole hero.</li>
+    <li><strong>Stack:</strong> the top goal's ticket stub at hero scale &mdash; goal name, saved-so-far in Archivo 56, chrome fill rail, and <em>&ldquo;&#8377;1,875/month to make it&rdquo;</em>. Spending drops to one mono line below the perforation: <em>&ldquo;&#8377;1,830 spent this month.&rdquo;</em></li>
+  </ul>
+
+  <h3>Wrapped</h3>
+  <p class="prose">On the 1st, the closed month becomes a five-card vertical story: <em>total spent</em> &rarr; <em>where it went</em> &rarr; <em>the one number that stands out</em> &rarr; <em>stamps earned</em> &rarr; <em>versus last month</em>. Chrome on Ink, full-bleed, one number per card, swipe down to advance.</p>
+  <p class="prose">Every card exports as a 1080&times;1920 PNG via a Compose <code>GraphicsLayer</code> capture. This is the app's one genuinely viral surface &mdash; it's the reason anyone outside your friend group ever hears about it. Build it in Phase 4, but design every Drop card from Phase 2 onward as though it will end up here.</p>
+</section>
+
+<!-- ============ DROPS ============ -->
+<section class="sec">
+  <span class="sec-tag">Insights</span>
+  <h2>The Drop engine</h2>
+  <p class="intro">A Drop is a pure function from transactions to an optional card. No state, no ML, no network. Most of them are ten lines because <code>Analytics.kt</code> already did the hard part. Build them as a list of rules and let the feed sort by score.</p>
+
+  <pre><code>data class Drop(
+    val key: String,          // stable — "1am-tax-2026-08" — used for dismissal
+    val kicker: String,       // mono label, e.g. "The 1am tax"
+    val figure: String,       // the big number, pre-formatted
+    val line: String,         // one dry sentence
+    val score: Int,           // 0..100, feed sorts desc
+    val shareable: Boolean = true,
+)
+
+interface DropRule { fun evaluate(tx: List&lt;Transaction&gt;, a: SpendingAnalytics): Drop? }</code></pre>
+
+  <p class="prose">A Drop only appears if it clears its <em>floor</em> &mdash; a Drop about &#8377;40 is noise. Floors are given below and are not negotiable; an app that says something every day about nothing gets uninstalled in a week.</p>
+
+  <div class="scroll"><table>
+    <thead><tr><th>Rule</th><th>Source</th><th>Floor</th><th>Example output</th></tr></thead>
+    <tbody>
+      <tr><td><strong>The 1am tax</strong> <span class="lab">new</span></td><td>Debits where <code>hour in 0..4</code></td><td>&ge;&#8377;300 and &ge;3 receipts</td><td>&ldquo;<strong>&#8377;640</strong> of your month happened after midnight. Nine orders.&rdquo;</td></tr>
+      <tr><td><strong>Small stuff</strong> <span class="lab">new</span></td><td>Debits &lt; &#8377;100</td><td>&ge;15 receipts</td><td>&ldquo;<strong>47 receipts under &#8377;100</strong> add up to &#8377;1,890. That's your biggest category and it doesn't have a name.&rdquo;</td></tr>
+      <tr><td><strong>Pace check</strong></td><td><code>a.projectedMinor</code></td><td>day &ge; 7</td><td>&ldquo;At this rate August closes at <strong>&#8377;2,840</strong>. Budget's &#8377;5,000.&rdquo;</td></tr>
+      <tr><td><strong>Category spike</strong></td><td><code>a.categoryShifts[0]</code></td><td>&ge;&#8377;500 and &ge;+40%</td><td>&ldquo;Shopping is up <strong>&#8377;610</strong> on last month. Roughly triple.&rdquo;</td></tr>
+      <tr><td><strong>Merchant obsession</strong></td><td><code>a.topMerchants[0]</code></td><td>&ge;6 visits</td><td>&ldquo;You've paid Blinkit <strong>11 times</strong> this month. &#8377;1,204.&rdquo;</td></tr>
+      <tr><td><strong>Concentration</strong></td><td><code>a.topThreeShare</code></td><td>&ge;0.55</td><td>&ldquo;Three places took <strong>61%</strong> of your month.&rdquo;</td></tr>
+      <tr><td><strong>Expensive personality</strong></td><td><code>snapshot.dailyTotals</code> by weekday, 90d</td><td>top day &ge;2&times; median</td><td>&ldquo;<strong>Saturday</strong> is your most expensive personality. &#8377;612 average; Tuesday manages &#8377;94.&rdquo;</td></tr>
+      <tr><td><strong>Before you touch it</strong></td><td><code>a.recurring</code></td><td>&ge;2 items</td><td>&ldquo;<strong>&#8377;899</strong> leaves every month before you touch it. Four subscriptions.&rdquo;</td></tr>
+      <tr><td><strong>Quiet run</strong></td><td>Consecutive days under pace</td><td>&ge;3 days</td><td>&ldquo;<strong>Five days</strong> under pace.&rdquo; <span class="lab">stated as fact, never as a streak to protect</span></td></tr>
+      <tr><td><strong>New places</strong></td><td>Merchants unseen in prior 180d</td><td>&ge;4</td><td>&ldquo;<strong>Six places</strong> you'd never paid before.&rdquo;</td></tr>
+      <tr><td><strong>The flexible half</strong></td><td><code>a.committed</code> / <code>a.flexible</code></td><td>committed &gt; 0</td><td>&ldquo;<strong>&#8377;2,100</strong> of your month was already decided before it started.&rdquo;</td></tr>
+      <tr><td><strong>Refund landed</strong></td><td>Confirmed refund &ge;&#8377;200</td><td>&mdash;</td><td>&ldquo;<strong>&#8377;499</strong> came back from Myntra. Your month just got shorter.&rdquo;</td></tr>
+    </tbody>
+  </table></div>
+
+  <p class="prose"><strong>Two ordering rules.</strong> Never show more than three Drops per day in Loud mode, three per week in Quiet. And never show the same <code>key</code> twice &mdash; that's what the <code>dismissed_drops</code> table is for. A Drop the user marks &ldquo;Not useful&rdquo; suppresses that <em>rule</em> for 60 days, not just that instance.</p>
+
+  <div class="no"><p><strong>Never write a Drop that tells the user what to do.</strong> &ldquo;Try cooking at home&rdquo; is the exact moment someone uninstalls. Report the number; they are perfectly capable of drawing the conclusion.</p></div>
+</section>
+
+<!-- ============ STAMPS ============ -->
+<section class="sec">
+  <span class="sec-tag">Achievements</span>
+  <h2>Stamps</h2>
+  <p class="intro">Twenty-four collectible rubber stamps. The design brief for the whole system is one line: <strong>most stamps should be discovered, not pursued.</strong> Daily-streak mechanics are what produce the engagement fatigue that kills these apps &mdash; a thing you must feed every day becomes a thing you resent, then a notification you disable, then an uninstall.</p>
+  <p class="prose">So: only two of the twenty-four are streaks, both short and both non-punishing (breaking one loses nothing you'd earned). The rest you get by living your life and later finding out you got them.</p>
+
+  <p class="prose">Visually a stamp is a 1.5dp Chilli border, 4dp radius, Chilli text in Spline Sans Mono 700 uppercase, rotated between &minus;4&deg; and +4&deg; (seeded from the stamp id so it's stable). Locked stamps are dashed RuleHard on Fade. The earn animation is a press: scale 1.6 &rarr; 0.92 &rarr; 1.0 over 380ms with a <code>HapticFeedbackConstants.CONFIRM</code>, then a 2s hold. Once. Never repeat it.</p>
+
+  <div class="scroll"><table>
+    <thead><tr><th>Stamp</th><th>Condition</th><th>Kind</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">FIRST BLOOD</td><td>First receipt added by hand</td><td>Onboarding</td></tr>
+      <tr><td class="mono">CLEAN SLATE</td><td>Review queue reaches zero</td><td>Habit</td></tr>
+      <tr><td class="mono">SEVEN</td><td>7 consecutive days under pace</td><td>Streak</td></tr>
+      <tr><td class="mono">THIRTY</td><td>30 consecutive days with the app installed and syncing</td><td>Streak</td></tr>
+      <tr><td class="mono">UNDER</td><td>Finish a full period under budget</td><td>Restraint</td></tr>
+      <tr><td class="mono">NIGHT OWL</td><td>&#8377;500+ spent between midnight and 4am in one period</td><td>Discovery</td></tr>
+      <tr><td class="mono">DAWN PATROL</td><td>A receipt between 4am and 6am</td><td>Discovery</td></tr>
+      <tr><td class="mono">ONE TRICK</td><td>One merchant takes &gt;25% of a period</td><td>Discovery</td></tr>
+      <tr><td class="mono">THE SPREAD</td><td>Receipts in 10+ distinct categories in one period</td><td>Discovery</td></tr>
+      <tr><td class="mono">CENTURION</td><td>100 receipts collected</td><td>Volume</td></tr>
+      <tr><td class="mono">FIVE HUNDRED</td><td>500 receipts collected</td><td>Volume</td></tr>
+      <tr><td class="mono">&#8377;1 LAKH</td><td>&#8377;1,00,000 tracked in total</td><td>Volume</td></tr>
+      <tr><td class="mono">BIRYANI INDEX</td><td>10+ food receipts in one period</td><td>Funny</td></tr>
+      <tr><td class="mono">SUNDAY SCARIES</td><td>Sunday is the top spend day, 3 periods running</td><td>Funny</td></tr>
+      <tr><td class="mono">ROUND NUMBER</td><td>A receipt for exactly &#8377;1,000, &#8377;2,000 or &#8377;5,000</td><td>Funny</td></tr>
+      <tr><td class="mono">THE DOUBLE</td><td>Same merchant twice within one hour</td><td>Funny</td></tr>
+      <tr><td class="mono">FLAT WEEK</td><td>A week where no category moves more than 10%</td><td>Restraint</td></tr>
+      <tr><td class="mono">NO NOTES</td><td>A full period with the review queue never above 3</td><td>Habit</td></tr>
+      <tr><td class="mono">FIRST STACK</td><td>First goal created</td><td>Goals</td></tr>
+      <tr><td class="mono">HALFWAY</td><td>Any goal reaches 50%</td><td>Goals</td></tr>
+      <tr><td class="mono">CASHED OUT</td><td>Any goal completed</td><td>Goals</td></tr>
+      <tr><td class="mono">THE ARCHIVE</td><td>Three Wrapped recaps collected</td><td>Longevity</td></tr>
+      <tr><td class="mono">HISTORIAN</td><td>Twelve Wrapped recaps collected</td><td>Longevity</td></tr>
+      <tr><td class="mono">RECEIPTS</td><td>Share any Drop or Wrapped card</td><td>Social</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="no"><p><strong>No stamp is ever lost.</strong> No decay, no expiry, no &ldquo;you broke your streak&rdquo; notification. Ever. A person who stops using the app for two months and comes back should find their shelf exactly as they left it.</p></div>
+</section>
+
+<!-- ============ MOTION ============ -->
+<section class="sec">
+  <span class="sec-tag">Interactions</span>
+  <h2>Motion and touch</h2>
+  <p class="intro">Specified precisely because &ldquo;make it feel nice&rdquo; is not an instruction anyone can execute. All values are final.</p>
+
+  <div class="scroll"><table>
+    <thead><tr><th>Moment</th><th class="mono">Spec</th><th>Haptic</th></tr></thead>
+    <tbody>
+      <tr><td>Hero number changes</td><td class="mono">Digit roll, 520ms, FastOutSlowIn, stagger 40ms/digit right&#8594;left</td><td>none</td></tr>
+      <tr><td>Pace rail fills on open</td><td class="mono">0 &#8594; value, 700ms, spring(0.75, 380)</td><td>none</td></tr>
+      <tr><td>Review card swipe</td><td class="mono">Follows finger 1:1; commits past 32% width; exits 240ms LinearOutSlowIn</td><td><code>CONFIRM</code> on commit</td></tr>
+      <tr><td>Review card rejected</td><td class="mono">Springs back, spring(0.6, 600)</td><td><code>REJECT</code></td></tr>
+      <tr><td>Numpad key</td><td class="mono">Scale 0.94, 90ms</td><td><code>KEYBOARD_TAP</code></td></tr>
+      <tr><td>Stamp earned</td><td class="mono">1.6 &#8594; 0.92 &#8594; 1.0, 380ms, then hold 2s</td><td><code>CONFIRM</code></td></tr>
+      <tr><td>Goal milestone (25/50/75/100%)</td><td class="mono">Rail overshoots 4% then settles, 600ms</td><td><code>CONFIRM</code></td></tr>
+      <tr><td>Pull to re-scan SMS</td><td class="mono">Receipt-print: rows slide down 1 by 1, 60ms apart</td><td><code>GESTURE_START</code></td></tr>
+      <tr><td>Tab change</td><td class="mono">Crossfade 160ms. No slide.</td><td>none</td></tr>
+      <tr><td>Sheet open</td><td class="mono">Slide up 280ms, spring(0.9, 400)</td><td>none</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="no"><p><strong>One animation at a time per screen.</strong> If the hero is rolling, the rail waits. Simultaneous motion is the difference between expensive and cheap, and it is the mistake most often made here.</p></div>
+
+  <h4>Gestures worth building</h4>
+  <ul class="plain">
+    <li><strong>Swipe a Ledger row left</strong> &rarr; recategorise (opens the chip row inline, no sheet).</li>
+    <li><strong>Long-press a Ledger row</strong> &rarr; &ldquo;always categorise <em>Blinkit</em> as Groceries&rdquo;, writing a <code>LearnedRule</code>. You already have the whole mechanism; it's currently unreachable from the list.</li>
+    <li><strong>Long-press the hero</strong> &rarr; hold to reveal the same figure for the previous three periods. Release to return.</li>
+    <li><strong>Pull down on Today</strong> &rarr; re-scan the SMS inbox.</li>
+  </ul>
+</section>
+
+<!-- ============ DATA ============ -->
+<section class="sec">
+  <span class="sec-tag">Data layer</span>
+  <h2>Migration to v5</h2>
+  <p class="intro">The <code>transactions</code> table does not change. Four additions, all new tables plus one index. Bump <code>TrackDatabase</code> to <strong>5</strong> and add the <code>oldVersion &lt; 5</code> branch to <code>onUpgrade</code> &mdash; there is real user data on Prudvi's device, so a destructive migration is not acceptable.</p>
+
+  <pre><code>if (oldVersion &lt; 5) {
+    db.execSQL("""
+        CREATE TABLE stamps (
+            id TEXT PRIMARY KEY NOT NULL,
+            earned_at INTEGER NOT NULL,
+            period_key TEXT,
+            seen INTEGER NOT NULL DEFAULT 0
+        )""")
+    db.execSQL("""
+        CREATE TABLE goals (
+            id TEXT PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL,
+            target_minor INTEGER NOT NULL CHECK(target_minor &gt; 0),
+            saved_minor INTEGER NOT NULL DEFAULT 0,
+            target_epoch_day INTEGER,
+            created_at INTEGER NOT NULL,
+            completed_at INTEGER
+        )""")
+    db.execSQL("""
+        CREATE TABLE dismissed_drops (
+            rule_key TEXT PRIMARY KEY NOT NULL,
+            dismissed_at INTEGER NOT NULL
+        )""")
+    db.execSQL("""
+        CREATE TABLE period_snapshots (
+            period_key TEXT PRIMARY KEY NOT NULL,
+            budget_minor INTEGER NOT NULL,
+            spent_minor INTEGER NOT NULL,
+            closed_at INTEGER NOT NULL
+        )""")
+    db.execSQL("CREATE INDEX tx_merchant ON transactions(merchant)")
+}</code></pre>
+
+  <p class="prose"><code>period_snapshots</code> is written once when a period rolls over. It's what makes Wrapped and every &ldquo;versus last month&rdquo; comparison cheap instead of a full-table scan, and it survives the user later editing old transactions.</p>
+
+  <h4>Preferences to add</h4>
+  <p class="prose">In the existing <code>track_budget</code> SharedPreferences: <code>mode</code> (<code>CHILL</code>/<code>PACE</code>/<code>STACK</code>), <code>rhythm</code> (<code>MONTHLY</code>/<code>WEEKLY</code>/<code>ROLLING</code>), <code>amplitude</code> (<code>LOUD</code>/<code>QUIET</code>), <code>reset_day</code> (Int, 1&ndash;28), <code>theme</code> (<code>LIGHT</code>/<code>DARK</code>/<code>SYSTEM</code>).</p>
+
+  <h4>Category colours &mdash; replace all 25</h4>
+  <p class="prose">The current values are desaturated to suit the old dark theme and will read as mud on paper. These are tuned for the Paper ground and are chroma-separated so adjacent bars in a stacked rail stay distinguishable.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Category</th><th class="mono">Hex</th><th>Category</th><th class="mono">Hex</th></tr></thead>
+    <tbody>
+      <tr><td>Food &amp; dining</td><td class="mono"><span class="sw" style="background:#D9822B"></span>#D9822B</td><td>Groceries</td><td class="mono"><span class="sw" style="background:#3E7D5A"></span>#3E7D5A</td></tr>
+      <tr><td>Shopping</td><td class="mono"><span class="sw" style="background:#B5478A"></span>#B5478A</td><td>Transport</td><td class="mono"><span class="sw" style="background:#2F6FA8"></span>#2F6FA8</td></tr>
+      <tr><td>Bills &amp; recharges</td><td class="mono"><span class="sw" style="background:#7A5BC4"></span>#7A5BC4</td><td>Rent</td><td class="mono"><span class="sw" style="background:#A8501F"></span>#A8501F</td></tr>
+      <tr><td>Entertainment</td><td class="mono"><span class="sw" style="background:#C43D6B"></span>#C43D6B</td><td>Subscription</td><td class="mono"><span class="sw" style="background:#4E63C9"></span>#4E63C9</td></tr>
+      <tr><td>Medical</td><td class="mono"><span class="sw" style="background:#CC3A2E"></span>#CC3A2E</td><td>Travel</td><td class="mono"><span class="sw" style="background:#2A8C82"></span>#2A8C82</td></tr>
+      <tr><td>Gaming</td><td class="mono"><span class="sw" style="background:#5B4FC7"></span>#5B4FC7</td><td>Fitness</td><td class="mono"><span class="sw" style="background:#4F8F3C"></span>#4F8F3C</td></tr>
+      <tr><td>Personal</td><td class="mono"><span class="sw" style="background:#A9548F"></span>#A9548F</td><td>Services</td><td class="mono"><span class="sw" style="background:#3D6E9C"></span>#3D6E9C</td></tr>
+      <tr><td>Small shops</td><td class="mono"><span class="sw" style="background:#B06C33"></span>#B06C33</td><td>Logistics</td><td class="mono"><span class="sw" style="background:#357F92"></span>#357F92</td></tr>
+      <tr><td>Insurance</td><td class="mono"><span class="sw" style="background:#6A5FA8"></span>#6A5FA8</td><td>Pet</td><td class="mono"><span class="sw" style="background:#C06A45"></span>#C06A45</td></tr>
+      <tr><td>Cash</td><td class="mono"><span class="sw" style="background:#8A8A4A"></span>#8A8A4A</td><td>Miscellaneous</td><td class="mono"><span class="sw" style="background:#7A8189"></span>#7A8189</td></tr>
+      <tr><td>Transfers <span class="lab">not spending</span></td><td class="mono"><span class="sw" style="background:#5A626B"></span>#5A626B</td><td>Repayments <span class="lab">not spending</span></td><td class="mono"><span class="sw" style="background:#2B7F6E"></span>#2B7F6E</td></tr>
+      <tr><td>Investment <span class="lab">not spending</span></td><td class="mono"><span class="sw" style="background:#3F7A66"></span>#3F7A66</td><td>Refund <span class="lab">not spending</span></td><td class="mono"><span class="sw" style="background:#2B3FD9"></span>#2B3FD9</td></tr>
+      <tr><td>Income <span class="lab">not spending</span></td><td class="mono"><span class="sw" style="background:#2B3FD9"></span>#2B3FD9</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ BUILD ============ -->
+<section class="sec">
+  <span class="sec-tag">Delivery</span>
+  <h2>Build order</h2>
+  <p class="intro">Six phases, each one shippable on its own. If you stop after any of them the app is still coherent &mdash; that's the point of the ordering, not a coincidence.</p>
+
+  <h4>File structure to move to</h4>
+  <pre><code>ui/
+  Tokens.kt        // colours, type, spacing, shapes — the ONLY place Color() appears
+  Components.kt    // Rail, Perforation, CategoryMark, Stamp, TicketStub, AmountPad, Pill
+  TodayScreen.kt
+  FeedScreen.kt
+  GoalsScreen.kt
+  LedgerScreen.kt
+  SettingsScreen.kt
+  ReviewDeck.kt
+  AddSheet.kt
+  WrappedScreen.kt
+  Shell.kt         // tab scaffold + overlay host
+model/
+  Drops.kt         // DropRule list
+  Stamps.kt        // StampRule list
+  Goals.kt
+data/  // TrackRepository extended; TrackDatabase → v5</code></pre>
+  <p class="prose">No file over 400 lines. <code>TrackBudgetApp.kt</code> is deleted at the end of Phase 1.</p>
+
+  <ul class="rule-list">
+    <li><span class="n">01</span><span><strong>Foundation.</strong> <code>Tokens.kt</code>, three fonts, <code>Components.kt</code>, new tab shell. Rebuild Today (Pace mode only) and Ledger against the new system. Old file deleted. <em>Ship this and the app already looks like a different product.</em></span></li>
+    <li><span class="n">02</span><span><strong>Drops.</strong> DB v5. <code>Drops.kt</code> with all 12 rules, Feed screen, dismissal. Insights tab is gone.</span></li>
+    <li><span class="n">03</span><span><strong>Interactions.</strong> Review deck, amount-pad Add, Ledger gestures, the full motion table, haptics.</span></li>
+    <li><span class="n">04</span><span><strong>Goals &amp; Stamps.</strong> Goals tab, ticket stub, all 24 stamps, the earn moment.</span></li>
+    <li><span class="n">05</span><span><strong>Modes.</strong> Chill and Stack heroes, Rolling rhythm, Loud/Quiet, rewritten onboarding with the two questions.</span></li>
+    <li><span class="n">06</span><span><strong>Wrapped &amp; share.</strong> Five-card recap, PNG export, share sheet, <code>period_snapshots</code> rollover, widget restyled to the new tokens.</span></li>
+  </ul>
+
+  <p class="prose">The widget (<code>BudgetWidgetProvider</code>, RemoteViews) gets restyled in Phase 6 but not rewritten. Paper background, Ink text, the pace rail. RemoteViews can't do the variable-font width axis &mdash; use a static Archivo Expanded TTF for the widget's number and accept the small duplication.</p>
+</section>
+
+<!-- ============ DO NOT ============ -->
+<section class="sec">
+  <span class="sec-tag">Guardrails</span>
+  <h2>Things that will quietly wreck it</h2>
+  <p class="intro">Every item here is a real failure mode for this specific design, not general advice. When something looks off and you're tempted to fix it by adding, check this list first &mdash; the fix is almost always subtraction.</p>
+
+  <ul class="rule-list">
+    <li><span class="n">01</span><span><strong>No shadows, no elevation, no blur.</strong> Paper doesn't float. Hairline, fill change, or perforation.</span></li>
+    <li><span class="n">02</span><span><strong>No <code>Color(0xFF…)</code> outside <code>Tokens.kt</code>.</strong> Add a lint rule if you can; grep for it before every release if you can't.</span></li>
+    <li><span class="n">03</span><span><strong>No unrestyled Material3 components.</strong> Default <code>Button</code>, <code>Switch</code>, <code>TopAppBar</code>, <code>Card</code> and <code>FilterChip</code> all carry Material's radii and elevation and will look imported from a different app. Wrap every one.</span></li>
+    <li><span class="n">04</span><span><strong>No emoji anywhere in the UI.</strong> Category marks are two-letter monograms. This one is worth being stubborn about.</span></li>
+    <li><span class="n">05</span><span><strong>No centred body text.</strong> Left-aligned, always. Centring is only for the amount on the Add pad and stamp faces.</span></li>
+    <li><span class="n">06</span><span><strong>No radius that isn't 0, 4 or 99.</strong></span></li>
+    <li><span class="n">07</span><span><strong>No spacing value off the 4dp scale.</strong> If 14 looks right, you want 12 or 16.</span></li>
+    <li><span class="n">08</span><span><strong>No proportional figures.</strong> Every &#8377; amount is Spline Sans Mono with tabular numerals, so columns of numbers line up. This is most of why the lists read as receipts.</span></li>
+    <li><span class="n">09</span><span><strong>No second accent colour.</strong> Ultramarine, Chrome and Chilli each have one job. Chrome never becomes &ldquo;a nice highlight&rdquo;; it means goals.</span></li>
+    <li><span class="n">10</span><span><strong>No perforation more than twice per screen.</strong> It's a signature, and signatures stop working when they're everywhere.</span></li>
+    <li><span class="n">11</span><span><strong>No notification that isn't user-initiated or genuinely new.</strong> No &ldquo;we miss you&rdquo;, no &ldquo;you haven't checked in&rdquo;, no streak-loss warnings. The two channels you have are enough.</span></li>
+    <li><span class="n">12</span><span><strong>No blocking the app on SMS permission.</strong> Manual-first must be a complete product on its own.</span></li>
+    <li><span class="n">13</span><span><strong>No network calls.</strong> The app stays local-first and offline. It's a genuine feature for a money app and it's worth saying so on the store listing.</span></li>
+    <li><span class="n">14</span><span><strong>No dark theme drift.</strong> When something looks wrong in light, fix it in light. Do not quietly make dark the default because it's easier.</span></li>
+  </ul>
+</section>
+
+<!-- ============ QA ============ -->
+<section class="sec">
+  <span class="sec-tag">Before shipping</span>
+  <h2>Checks</h2>
+  <ul class="rule-list">
+    <li><span class="n">01</span><span>Every screen at font scale <strong>200%</strong> &mdash; nothing clips, nothing overlaps.</span></li>
+    <li><span class="n">02</span><span>Every screen in <strong>light and dark</strong>, and switch between them while the app is open.</span></li>
+    <li><span class="n">03</span><span>Every screen with <strong>zero data</strong>, and again with <strong>2,000 receipts</strong>. Ledger scroll stays at 60fps.</span></li>
+    <li><span class="n">04</span><span>All three <strong>modes</strong> &times; all three <strong>rhythms</strong> = 9 Today variants. Check each.</span></li>
+    <li><span class="n">05</span><span><strong>Animator duration scale 0</strong> &mdash; every end state still reachable.</span></li>
+    <li><span class="n">06</span><span><strong>TalkBack</strong> through Today, Review deck and Add. Every control announces something a person would recognise.</span></li>
+    <li><span class="n">07</span><span><strong>Greyscale screenshot</strong> of Today in all three pace states &mdash; still tells you which state you're in.</span></li>
+    <li><span class="n">08</span><span><strong>Upgrade from v4</strong> using <code>device-backup/final-device-state/track_budget.db</code>. Real data, no loss.</span></li>
+    <li><span class="n">09</span><span>Grep for banned strings, for <code>!</code> in string literals, for <code>Color(0x</code> outside Tokens.</span></li>
+    <li><span class="n">10</span><span>Existing unit tests still green: <code>SmsParserTest</code>, <code>DashboardTest</code>. Neither should need changing &mdash; if they do, you touched the domain layer and should ask why.</span></li>
+  </ul>
+</section>
+
+<footer class="foot">
+  <p><strong>Receipts</strong> &mdash; product and design spec v1 &middot; August 2026. Domain layer by Prudvi, preserved. UI layer to be rebuilt.</p>
+  <p>Anything unspecified is a gap in this document, not a puzzle to solve six times in six files. Decide it once, write it down here, and tell Prudvi what you landed on. Product calls are yours; he wants to hear them, not approve them.</p>
+</footer>
+
+</div>
