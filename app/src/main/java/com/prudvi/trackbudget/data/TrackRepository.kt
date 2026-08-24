@@ -1,28 +1,15 @@
 package com.prudvi.trackbudget.data
 
-import android.Manifest
-import android.app.Notification
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.provider.Telephony
-import androidx.core.content.ContextCompat
-import com.prudvi.trackbudget.MainActivity
-import com.prudvi.trackbudget.R
 import com.prudvi.trackbudget.model.Budget
-import com.prudvi.trackbudget.model.CategoryLimitLevel
 import com.prudvi.trackbudget.model.Direction
 import com.prudvi.trackbudget.model.LearnedRule
 import com.prudvi.trackbudget.model.ParsedTransaction
 import com.prudvi.trackbudget.model.Transaction
 import com.prudvi.trackbudget.model.TransactionSource
 import com.prudvi.trackbudget.model.TransactionStatus
-import com.prudvi.trackbudget.model.budgetRange
-import com.prudvi.trackbudget.model.category
-import com.prudvi.trackbudget.model.categoryLimitStatuses
+import com.prudvi.trackbudget.model.findRefundCandidate
 import com.prudvi.trackbudget.sms.SmsParser
 import com.prudvi.trackbudget.widget.BudgetWidgetProvider
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,22 +21,19 @@ import java.util.UUID
 class TrackRepository(private val context: Context) {
     private val database = TrackDatabase(context)
     private val preferences = context.getSharedPreferences("track_budget", Context.MODE_PRIVATE)
+    val receipts by lazy { ReceiptsRepository(context, database, preferences) }
+    private val categoryLimitNotifier = CategoryLimitNotifier(context, preferences)
     private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
     private val _learnedRules = MutableStateFlow<List<LearnedRule>>(emptyList())
     private val _ignoredSources = MutableStateFlow<Set<String>>(emptySet())
 
     init {
         migrateLegacyData(context, database, preferences)
-        database.transactions().filter {
-            it.status == TransactionStatus.UNPARSEABLE &&
-                it.sender != null &&
-                it.rawMessage != null &&
-                !SmsParser.isPaymentCandidate(it.sender, it.rawMessage)
-        }.forEach { database.delete(it.id) }
         _transactions.value = database.transactions()
         _learnedRules.value = loadLearnedRules()
         _ignoredSources.value = preferences.getStringSet("ignored_sources", emptySet()).orEmpty().toSet()
-        evaluateCategoryLimits(budget, _transactions.value)
+        categoryLimitNotifier.evaluate(budget, _transactions.value, onboardingComplete)
+        receipts.refreshFeatures(_transactions.value, budget)
     }
 
     val transactions: StateFlow<List<Transaction>> = _transactions
@@ -71,13 +55,23 @@ class TrackRepository(private val context: Context) {
                 val parts = value.split('=')
                 if (parts.size == 2) parts[1].toLongOrNull()?.let { parts[0] to it } else null
             }.toMap(),
+            resetDay = preferences.getInt("reset_day", 1).coerceIn(1, 28),
         )
         private set(value) {
             preferences.edit()
                 .putLong("budget_minor", value.amountMinor)
                 .putString("budget_period", value.period)
+                .putString(
+                    "rhythm",
+                    when (value.period) {
+                        "Week" -> "WEEKLY"
+                        "Rolling" -> "ROLLING"
+                        else -> "MONTHLY"
+                    },
+                )
                 .putBoolean("budget_repeats", value.repeats)
                 .putBoolean("budget_carry", value.carryOver)
+                .putInt("reset_day", value.resetDay.coerceIn(1, 28))
                 .apply {
                     if (value.startEpochDay == null) remove("budget_start_day") else putLong("budget_start_day", value.startEpochDay)
                     if (value.endEpochDay == null) remove("budget_end_day") else putLong("budget_end_day", value.endEpochDay)
@@ -85,7 +79,8 @@ class TrackRepository(private val context: Context) {
                 .putStringSet("budget_limits", value.categoryLimits.mapTo(mutableSetOf()) { "${it.key}=${it.value}" })
                 .apply()
             BudgetWidgetProvider.updateAll(context)
-            evaluateCategoryLimits(value, _transactions.value)
+            categoryLimitNotifier.evaluate(value, _transactions.value, onboardingComplete)
+            receipts.refreshFeatures(_transactions.value, value)
         }
 
     fun finishOnboarding(value: Budget) {
@@ -100,7 +95,7 @@ class TrackRepository(private val context: Context) {
     }
 
     fun refreshCategoryLimitAlerts() {
-        evaluateCategoryLimits(budget, _transactions.value)
+        categoryLimitNotifier.evaluate(budget, _transactions.value, onboardingComplete)
     }
 
     fun setSourceIgnored(key: String, ignored: Boolean) {
@@ -111,10 +106,12 @@ class TrackRepository(private val context: Context) {
         _ignoredSources.value = updated
     }
 
-    fun addLearnedRule(merchant: String, categoryId: String) {
+    fun addLearnedRule(merchant: String, categoryId: String, direction: Direction? = null) {
         val normalized = merchant.trim().uppercase()
         if (normalized.isBlank()) return
-        val updated = _learnedRules.value.filterNot { it.merchant == normalized } + LearnedRule(normalized, categoryId)
+        val updated = _learnedRules.value.filterNot {
+            it.merchant == normalized && (direction == null || it.direction == direction || it.direction == null && it.appliesTo(direction))
+        } + LearnedRule(normalized, categoryId, direction = direction)
         saveLearnedRules(updated)
     }
 
@@ -161,7 +158,7 @@ class TrackRepository(private val context: Context) {
     }
 
     @Synchronized
-    fun importInbox(days: Int = 90): Int {
+    fun importInbox(days: Int = 90, force: Boolean = false): Int {
         if (preferences.getBoolean("legacy_sms_highwater_pending", false)) {
             val newestId = context.contentResolver.query(
                 Telephony.Sms.Inbox.CONTENT_URI,
@@ -176,6 +173,7 @@ class TrackRepository(private val context: Context) {
                 .putLong("last_sms_id", newestId)
                 .putBoolean("legacy_sms_highwater_pending", false)
                 .apply()
+            receipts.markSmsSynced()
             return 0
         }
 
@@ -183,11 +181,18 @@ class TrackRepository(private val context: Context) {
         val lastId = preferences.getLong("last_sms_id", 0)
         var highestId = lastId
         var imported = 0
+        val knownMessages = if (force) {
+            database.transactions().mapNotNullTo(mutableSetOf()) { transaction ->
+                transaction.rawMessage?.let { "${transaction.sender}|${transaction.occurredAt}|$it" }
+            }
+        } else mutableSetOf()
+        val selection = if (force) "${Telephony.Sms.DATE} >= ?" else "${Telephony.Sms.DATE} >= ? AND ${Telephony.Sms._ID} > ?"
+        val arguments = if (force) arrayOf(since.toString()) else arrayOf(since.toString(), lastId.toString())
         context.contentResolver.query(
             Telephony.Sms.Inbox.CONTENT_URI,
             arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
-            "${Telephony.Sms.DATE} >= ? AND ${Telephony.Sms._ID} > ?",
-            arrayOf(since.toString(), lastId.toString()),
+            selection,
+            arguments,
             "${Telephony.Sms._ID} ASC",
         )?.use { cursor ->
             val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
@@ -199,11 +204,18 @@ class TrackRepository(private val context: Context) {
                 highestId = maxOf(highestId, id)
                 val sender = cursor.getString(senderIndex) ?: continue
                 val body = cursor.getString(bodyIndex) ?: continue
-                val transaction = parseSms(sender, body, cursor.getLong(dateIndex)) ?: continue
-                if (database.insert(transaction)) imported++
+                val receivedAt = cursor.getLong(dateIndex)
+                val messageIdentity = "$sender|$receivedAt|$body"
+                if (messageIdentity in knownMessages) continue
+                val transaction = parseSms(sender, body, receivedAt) ?: continue
+                if (database.insert(transaction)) {
+                    imported++
+                    knownMessages += messageIdentity
+                }
             }
         }
         preferences.edit().putLong("last_sms_id", highestId).apply()
+        receipts.markSmsSynced()
         refresh()
         return imported
     }
@@ -224,7 +236,7 @@ class TrackRepository(private val context: Context) {
     @Synchronized
     fun clearAll() {
         database.clear()
-        preferences.edit().remove("last_sms_id").apply()
+        receipts.clearTransactionHistoryState()
         refresh()
     }
 
@@ -268,7 +280,10 @@ class TrackRepository(private val context: Context) {
     }
 
     private fun ParsedTransaction.toTransaction(sender: String, body: String): Transaction {
-        val learned = _learnedRules.value.firstOrNull { it.merchant == merchant.trim().uppercase() }?.categoryId
+        val normalizedMerchant = merchant.trim().uppercase()
+        val matchingRules = _learnedRules.value.filter { it.merchant == normalizedMerchant }
+        val learned = (matchingRules.firstOrNull { it.direction == direction }
+            ?: matchingRules.firstOrNull { it.direction == null && it.appliesTo(direction) })?.categoryId
         val inferred = if (direction == Direction.DEBIT) learned ?: inferCategory(merchant) else learned
         val status = when {
             learned != null -> TransactionStatus.CONFIRMED
@@ -276,11 +291,7 @@ class TrackRepository(private val context: Context) {
             inferred == null || confidence < 0.75f -> TransactionStatus.NEEDS_REVIEW
             else -> TransactionStatus.CONFIRMED
         }
-        val refundMatch = if (direction == Direction.CREDIT && inferred == "refund") {
-            database.transactions().filter { it.direction == Direction.DEBIT && it.status == TransactionStatus.CONFIRMED }
-                .minByOrNull { kotlin.math.abs(it.amountMinor - amountMinor) }?.id
-        } else null
-        return Transaction(
+        val candidate = Transaction(
             id = UUID.randomUUID().toString(),
             amountMinor = amountMinor,
             direction = direction,
@@ -293,8 +304,11 @@ class TrackRepository(private val context: Context) {
             sender = sender,
             refId = refId,
             sourceKey = sourceKey(sender, occurredAt, body),
-            refundOfId = refundMatch,
             rawMessage = body,
+        )
+        val refundMatch = if (inferred == "refund") findRefundCandidate(database.transactions(), candidate)?.id else null
+        return candidate.copy(
+            refundOfId = refundMatch,
         )
     }
 
@@ -307,7 +321,7 @@ class TrackRepository(private val context: Context) {
         val value = merchant.lowercase()
         return when {
             listOf("swiggy", "zomato", "restaurant", "cafe").any(value::contains) -> "food"
-            listOf("zepto", "bigbasket", "instamart", "grocery").any(value::contains) -> "groceries"
+            listOf("blinkit", "zepto", "bigbasket", "instamart", "grocery").any(value::contains) -> "groceries"
             listOf("amazon", "flipkart", "myntra").any(value::contains) -> "shopping"
             listOf("uber", "ola", "rapido", "metro", "fuel").any(value::contains) -> "transport"
             listOf("netflix", "spotify", "bookmyshow", "jiosaavn").any(value::contains) -> "entertainment"
@@ -335,78 +349,33 @@ class TrackRepository(private val context: Context) {
 
     private fun loadLearnedRules(): List<LearnedRule> = preferences.getStringSet("learned_rules", emptySet()).orEmpty().mapNotNull { value ->
         val parts = value.split('\t')
-        if (parts.size != 3) return@mapNotNull null
-        parts[2].toLongOrNull()?.let { LearnedRule(parts[0], parts[1], it) }
+        if (parts.size !in 3..4) return@mapNotNull null
+        parts[2].toLongOrNull()?.let {
+            LearnedRule(parts[0], parts[1], it, parts.getOrNull(3)?.takeIf(String::isNotBlank)?.let { name -> runCatching { Direction.valueOf(name) }.getOrNull() })
+        }
     }.sortedByDescending { it.learnedAtEpochDay }
 
     private fun saveLearnedRules(rules: List<LearnedRule>) {
         preferences.edit().putStringSet(
             "learned_rules",
-            rules.mapTo(mutableSetOf()) { "${it.merchant}\t${it.categoryId}\t${it.learnedAtEpochDay}" },
+            rules.mapTo(mutableSetOf()) { "${it.merchant}\t${it.categoryId}\t${it.learnedAtEpochDay}\t${it.direction?.name.orEmpty()}" },
         ).apply()
         _learnedRules.value = rules
     }
 
-    private fun evaluateCategoryLimits(value: Budget, transactions: List<Transaction>) {
-        val range = budgetRange(value)
-        val periodPrefix = "${range.start.toEpochDay()}:${range.endInclusive.toEpochDay()}:"
-        val sent = preferences.getStringSet("category_limit_alerts", emptySet()).orEmpty()
-            .filterTo(mutableSetOf()) { it.startsWith(periodPrefix) }
-        var changed = sent.size != preferences.getStringSet("category_limit_alerts", emptySet()).orEmpty().size
-        val canNotify = Build.VERSION.SDK_INT < 33 ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-
-        categoryLimitStatuses(transactions, value).forEach { status ->
-            val warningKey = "$periodPrefix${status.categoryId}:80"
-            val exceededKey = "$periodPrefix${status.categoryId}:100"
-            when {
-                status.level == CategoryLimitLevel.EXCEEDED && exceededKey !in sent && canNotify -> {
-                    showCategoryLimitNotification(status.categoryId, status.spentMinor, status.limitMinor, exceeded = true, exceededKey.hashCode())
-                    sent += warningKey
-                    sent += exceededKey
-                    changed = true
-                }
-                status.level == CategoryLimitLevel.WARNING && warningKey !in sent && canNotify -> {
-                    showCategoryLimitNotification(status.categoryId, status.spentMinor, status.limitMinor, exceeded = false, warningKey.hashCode())
-                    sent += warningKey
-                    changed = true
-                }
-            }
-        }
-        if (changed) preferences.edit().putStringSet("category_limit_alerts", sent).apply()
-    }
-
-    private fun showCategoryLimitNotification(categoryId: String, spent: Long, limit: Long, exceeded: Boolean, notificationId: Int) {
-        val categoryName = category(categoryId)?.name ?: "Category"
-        val openApp = PendingIntent.getActivity(
-            context,
-            notificationId,
-            Intent(context, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val text = if (exceeded) {
-            "${rupees(spent - limit)} over your ${rupees(limit)} limit"
+    private fun LearnedRule.appliesTo(transactionDirection: Direction): Boolean {
+        direction?.let { return it == transactionDirection }
+        return if (transactionDirection == Direction.CREDIT) {
+            categoryId in setOf("income", "refund", "repayments", "transfers")
         } else {
-            "${rupees(spent)} of ${rupees(limit)} used · ${rupees(limit - spent)} left"
+            categoryId !in setOf("income", "refund", "repayments")
         }
-        val notification = Notification.Builder(context, "category_limits")
-            .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle(if (exceeded) "$categoryName limit exceeded" else "$categoryName limit is at 80%")
-            .setContentText(text)
-            .setVisibility(Notification.VISIBILITY_PRIVATE)
-            .setContentIntent(openApp)
-            .setAutoCancel(true)
-            .build()
-        context.getSystemService(NotificationManager::class.java).notify(notificationId, notification)
     }
-
-    private fun rupees(minor: Long): String = "₹" + java.text.NumberFormat.getIntegerInstance(
-        java.util.Locale.Builder().setLanguage("en").setRegion("IN").build(),
-    ).format(kotlin.math.abs(minor) / 100)
 
     private fun refresh() {
         _transactions.value = database.transactions()
         BudgetWidgetProvider.updateAll(context)
-        evaluateCategoryLimits(budget, _transactions.value)
+        categoryLimitNotifier.evaluate(budget, _transactions.value, onboardingComplete)
+        receipts.refreshFeatures(_transactions.value, budget)
     }
 }

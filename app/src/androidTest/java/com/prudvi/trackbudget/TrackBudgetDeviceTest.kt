@@ -1,51 +1,66 @@
 package com.prudvi.trackbudget
 
+import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
+import org.junit.rules.TestRule
+import org.junit.runner.Description
+import org.junit.runners.model.Statement
 
 class TrackBudgetDeviceTest {
+    private val compose = createAndroidComposeRule<MainActivity>()
+
     @get:Rule
-    val compose = createAndroidComposeRule<MainActivity>()
+    val rules: RuleChain = RuleChain.outerRule(ExistingUserRule()).around(compose)
 
     @Test
-    fun homeAndPrimaryNavigationRender() {
-        compose.onNodeWithText("Home").assertIsDisplayed()
+    fun primaryNavigationAndSettingsRender() {
+        compose.onNodeWithText("RECEIPTS").assertIsDisplayed()
 
-        compose.onNodeWithText("Timeline").performClick()
-        compose.onNodeWithText("Search merchant, amount, note…").assertIsDisplayed()
-        compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
-        compose.onNodeWithText("DAILY SPEND").assertIsDisplayed()
+        compose.onNodeWithText("LEDGER").performClick()
+        compose.onNodeWithText("Search receipts").assertIsDisplayed()
 
-        compose.onNodeWithText("Insights").performClick()
-        compose.onNodeWithText("ON THIS PACE", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("FEED").performClick()
+        compose.onNodeWithText("Feed").assertIsDisplayed()
 
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Privacy & data").assertIsDisplayed().performClick()
-        compose.onNodeWithText("SMS permission").assertIsDisplayed()
-        compose.onNodeWithText("Past inbox import").assertIsDisplayed()
+        compose.onNodeWithText("GOALS").performClick()
+        compose.onNodeWithText("STAMPS").assertIsDisplayed()
+
+        compose.onNodeWithText("TODAY").performClick()
+        compose.onNodeWithContentDescription("Open settings").performClick()
+        compose.onNodeWithText("Settings").assertIsDisplayed()
+        compose.onNodeWithText("Network access").assertIsDisplayed()
     }
 
     @Test
-    fun reviewCreditAndBudgetSheetsOpenWithoutMutation() {
-        compose.onNode(
-            hasText("from", substring = true) and hasText("₹", substring = true) and hasClickAction(),
-        ).performClick()
-        compose.onNodeWithText("Refund").assertIsDisplayed()
-        compose.onNodeWithText("×").performClick()
+    fun manualEntryOpensWithoutWritingData() {
+        compose.onNodeWithContentDescription("New receipt").performClick()
+        compose.onNodeWithText("New receipt").assertIsDisplayed()
+        compose.onNodeWithText("Spent").assertIsDisplayed()
+        compose.onNodeWithText("Save").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Close new receipt").performClick()
+        compose.onNodeWithText("RECEIPTS").assertIsDisplayed()
+    }
 
-        compose.onNodeWithText("Review →").performClick()
-        compose.onNodeWithText("CATEGORY").assertIsDisplayed()
-        compose.onNodeWithText("×").performClick()
-
-        compose.onNodeWithText("☷").performClick()
-        compose.onNodeWithText("Budget setup").assertIsDisplayed()
-        compose.onNodeWithText("BUDGET AMOUNT").assertIsDisplayed()
-        compose.onNodeWithText("×").performClick()
+    private class ExistingUserRule : TestRule {
+        override fun apply(base: Statement, description: Description): Statement = object : Statement() {
+            override fun evaluate() {
+                InstrumentationRegistry.getInstrumentation().targetContext
+                    .getSharedPreferences("track_budget", Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("onboarding_complete", true)
+                    .putString("mode", "PACE")
+                    .putString("theme", "LIGHT")
+                    .commit()
+                base.evaluate()
+            }
+        }
     }
 }

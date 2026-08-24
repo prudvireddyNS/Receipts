@@ -45,6 +45,7 @@ data class Budget(
     val startEpochDay: Long? = null,
     val endEpochDay: Long? = null,
     val categoryLimits: Map<String, Long> = emptyMap(),
+    val resetDay: Int = 1,
 )
 
 data class BudgetRange(val start: LocalDate, val endInclusive: LocalDate) {
@@ -67,6 +68,7 @@ data class LearnedRule(
     val merchant: String,
     val categoryId: String,
     val learnedAtEpochDay: Long = LocalDate.now().toEpochDay(),
+    val direction: Direction? = null,
 )
 
 data class ParsedTransaction(
@@ -126,12 +128,18 @@ fun budgetRange(budget: Budget, today: LocalDate = LocalDate.now()): BudgetRange
         val start = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         BudgetRange(start, start.plusDays(6))
     }
+    "Rolling" -> BudgetRange(today.minusDays(29), today)
     "Custom" -> {
         val start = budget.startEpochDay?.let(LocalDate::ofEpochDay) ?: today
         val end = budget.endEpochDay?.let(LocalDate::ofEpochDay)?.coerceAtLeast(start) ?: start.plusDays(30)
         BudgetRange(start, end)
     }
-    else -> BudgetRange(today.withDayOfMonth(1), today.withDayOfMonth(today.lengthOfMonth()))
+    else -> {
+        val resetDay = budget.resetDay.coerceIn(1, 28)
+        val candidate = today.withDayOfMonth(resetDay)
+        val start = if (today.isBefore(candidate)) candidate.minusMonths(1) else candidate
+        BudgetRange(start, start.plusMonths(1).minusDays(1))
+    }
 }
 
 fun dashboard(transactions: List<Transaction>, budget: Budget, now: Long = System.currentTimeMillis()): DashboardSnapshot {

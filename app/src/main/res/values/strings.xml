@@ -1,3 +1,13 @@
 <resources>
-    <string name="app_name">Track Budget</string>
+    <string name="app_name">Receipts</string>
+    <string name="widget_period_placeholder">MONTH</string>
+    <string name="widget_days_placeholder">0 days left</string>
+    <string name="widget_amount_placeholder">₹0</string>
+    <string name="widget_spent_label">SPENT THIS MONTH</string>
+    <string name="widget_spent_placeholder">₹0 spent</string>
+    <string name="widget_summary_placeholder">₹0 of ₹0 spent</string>
+    <string name="widget_empty">Nothing yet</string>
+    <string name="widget_merchant_placeholder">Merchant</string>
+    <string name="widget_debit_placeholder">−₹0</string>
+    <string name="widget_review_placeholder">1 receipt needs you</string>
 </resources>

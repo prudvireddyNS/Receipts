@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="app_launch_paper">#E9E7DE</color>
+    <color name="receipt_paper">#E9E7DE</color>
+    <color name="receipt_paper_raised">#E2DFD4</color>
+    <color name="receipt_sunk">#DCD8CB</color>
+    <color name="receipt_ink">#15181A</color>
+    <color name="receipt_ink_soft">#3C4241</color>
+    <color name="receipt_fade">#5F645C</color>
+    <color name="receipt_rule">#CFCCBF</color>
+    <color name="receipt_rule_hard">#B3AF9F</color>
+    <color name="receipt_ultramarine">#2B3FD9</color>
+    <color name="receipt_chrome">#F5C518</color>
+    <color name="receipt_chilli">#B92D19</color>
+</resources>

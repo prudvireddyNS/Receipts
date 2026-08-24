@@ -5,11 +5,15 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.prudvi.trackbudget.model.Direction
+import com.prudvi.trackbudget.model.DismissedDropRule
+import com.prudvi.trackbudget.model.EarnedStamp
+import com.prudvi.trackbudget.model.Goal
+import com.prudvi.trackbudget.model.PeriodSnapshot
 import com.prudvi.trackbudget.model.Transaction
 import com.prudvi.trackbudget.model.TransactionSource
 import com.prudvi.trackbudget.model.TransactionStatus
 
-class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.db", null, 4) {
+class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.db", null, 5) {
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         db.setForeignKeyConstraintsEnabled(true)
@@ -42,6 +46,7 @@ class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.
         db.execSQL("CREATE INDEX tx_status ON transactions(status)")
         db.execSQL("CREATE UNIQUE INDEX tx_ref ON transactions(ref_id) WHERE ref_id IS NOT NULL")
         db.execSQL("CREATE UNIQUE INDEX tx_source_key ON transactions(source_key) WHERE source_key IS NOT NULL")
+        createReceiptsTables(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -94,6 +99,54 @@ class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.
             db.execSQL("CREATE UNIQUE INDEX tx_ref ON transactions(ref_id) WHERE ref_id IS NOT NULL")
             db.execSQL("CREATE UNIQUE INDEX tx_source_key ON transactions(source_key) WHERE source_key IS NOT NULL")
         }
+        if (oldVersion < 5) {
+            createReceiptsTables(db)
+        }
+    }
+
+    private fun createReceiptsTables(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE stamps (
+                id TEXT PRIMARY KEY NOT NULL,
+                earned_at INTEGER NOT NULL,
+                period_key TEXT,
+                seen INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE goals (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                target_minor INTEGER NOT NULL CHECK(target_minor > 0),
+                saved_minor INTEGER NOT NULL DEFAULT 0,
+                target_epoch_day INTEGER,
+                created_at INTEGER NOT NULL,
+                completed_at INTEGER
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE dismissed_drops (
+                rule_key TEXT PRIMARY KEY NOT NULL,
+                dismissed_at INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE period_snapshots (
+                period_key TEXT PRIMARY KEY NOT NULL,
+                budget_minor INTEGER NOT NULL,
+                spent_minor INTEGER NOT NULL,
+                closed_at INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX tx_merchant ON transactions(merchant)")
     }
 
     @Synchronized
@@ -153,8 +206,115 @@ class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.
 
     @Synchronized
     fun clear() {
-        writableDatabase.delete("transactions", null, null)
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("transactions", null, null)
+            db.delete("period_snapshots", null, null)
+            db.delete("dismissed_drops", null, null)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
     }
+
+    @Synchronized
+    fun goals(): List<Goal> = readableDatabase.query("goals", null, null, null, null, null, "created_at ASC").use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                add(
+                    Goal(
+                        id = cursor.getString(cursor.getColumnIndexOrThrow("id")),
+                        name = cursor.getString(cursor.getColumnIndexOrThrow("name")),
+                        targetMinor = cursor.getLong(cursor.getColumnIndexOrThrow("target_minor")),
+                        savedMinor = cursor.getLong(cursor.getColumnIndexOrThrow("saved_minor")),
+                        targetEpochDay = cursor.longOrNull("target_epoch_day"),
+                        createdAt = cursor.getLong(cursor.getColumnIndexOrThrow("created_at")),
+                        completedAt = cursor.longOrNull("completed_at"),
+                    ),
+                )
+            }
+        }
+    }
+
+    @Synchronized
+    fun upsertGoal(goal: Goal) {
+        writableDatabase.insertWithOnConflict("goals", null, goal.values(), SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    @Synchronized
+    fun deleteGoal(id: String) {
+        writableDatabase.delete("goals", "id = ?", arrayOf(id))
+    }
+
+    @Synchronized
+    fun earnedStamps(): List<EarnedStamp> = readableDatabase.query("stamps", null, null, null, null, null, "earned_at ASC").use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                add(
+                    EarnedStamp(
+                        id = cursor.getString(cursor.getColumnIndexOrThrow("id")),
+                        earnedAt = cursor.getLong(cursor.getColumnIndexOrThrow("earned_at")),
+                        periodKey = cursor.stringOrNull("period_key"),
+                        seen = cursor.getInt(cursor.getColumnIndexOrThrow("seen")) == 1,
+                    ),
+                )
+            }
+        }
+    }
+
+    @Synchronized
+    fun insertEarnedStamp(stamp: EarnedStamp): Boolean =
+        writableDatabase.insertWithOnConflict("stamps", null, stamp.values(), SQLiteDatabase.CONFLICT_IGNORE) != -1L
+
+    @Synchronized
+    fun markStampSeen(id: String) {
+        writableDatabase.update("stamps", ContentValues().apply { put("seen", 1) }, "id = ?", arrayOf(id))
+    }
+
+    @Synchronized
+    fun dismissedDropRules(): List<DismissedDropRule> = readableDatabase.query("dismissed_drops", null, null, null, null, null, "dismissed_at DESC").use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                add(
+                    DismissedDropRule(
+                        ruleKey = cursor.getString(cursor.getColumnIndexOrThrow("rule_key")),
+                        dismissedAt = cursor.getLong(cursor.getColumnIndexOrThrow("dismissed_at")),
+                    ),
+                )
+            }
+        }
+    }
+
+    @Synchronized
+    fun upsertDismissedDropRule(rule: DismissedDropRule) {
+        writableDatabase.insertWithOnConflict("dismissed_drops", null, rule.values(), SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    @Synchronized
+    fun deleteDismissedDropRule(ruleKey: String) {
+        writableDatabase.delete("dismissed_drops", "rule_key = ?", arrayOf(ruleKey))
+    }
+
+    @Synchronized
+    fun periodSnapshots(): List<PeriodSnapshot> = readableDatabase.query("period_snapshots", null, null, null, null, null, "period_key ASC").use { cursor ->
+        buildList {
+            while (cursor.moveToNext()) {
+                add(
+                    PeriodSnapshot(
+                        periodKey = cursor.getString(cursor.getColumnIndexOrThrow("period_key")),
+                        budgetMinor = cursor.getLong(cursor.getColumnIndexOrThrow("budget_minor")),
+                        spentMinor = cursor.getLong(cursor.getColumnIndexOrThrow("spent_minor")),
+                        closedAt = cursor.getLong(cursor.getColumnIndexOrThrow("closed_at")),
+                    ),
+                )
+            }
+        }
+    }
+
+    @Synchronized
+    fun insertPeriodSnapshot(snapshot: PeriodSnapshot): Boolean =
+        writableDatabase.insertWithOnConflict("period_snapshots", null, snapshot.values(), SQLiteDatabase.CONFLICT_IGNORE) != -1L
 
     private fun Transaction.values() = ContentValues().apply {
         put("id", id)
@@ -175,8 +335,42 @@ class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.
         put("recurring", if (recurring) 1 else 0)
     }
 
+    private fun Goal.values() = ContentValues().apply {
+        put("id", id)
+        put("name", name)
+        put("target_minor", targetMinor)
+        put("saved_minor", savedMinor)
+        if (targetEpochDay == null) putNull("target_epoch_day") else put("target_epoch_day", targetEpochDay)
+        put("created_at", createdAt)
+        if (completedAt == null) putNull("completed_at") else put("completed_at", completedAt)
+    }
+
+    private fun EarnedStamp.values() = ContentValues().apply {
+        put("id", id)
+        put("earned_at", earnedAt)
+        put("period_key", periodKey)
+        put("seen", if (seen) 1 else 0)
+    }
+
+    private fun DismissedDropRule.values() = ContentValues().apply {
+        put("rule_key", ruleKey)
+        put("dismissed_at", dismissedAt)
+    }
+
+    private fun PeriodSnapshot.values() = ContentValues().apply {
+        put("period_key", periodKey)
+        put("budget_minor", budgetMinor)
+        put("spent_minor", spentMinor)
+        put("closed_at", closedAt)
+    }
+
     private fun android.database.Cursor.stringOrNull(column: String): String? {
         val index = getColumnIndexOrThrow(column)
         return if (isNull(index)) null else getString(index)
+    }
+
+    private fun android.database.Cursor.longOrNull(column: String): Long? {
+        val index = getColumnIndexOrThrow(column)
+        return if (isNull(index)) null else getLong(index)
     }
 }

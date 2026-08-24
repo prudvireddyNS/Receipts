@@ -4,7 +4,8 @@
     android:height="48dp"
     android:viewportWidth="48"
     android:viewportHeight="48">
-    <path android:fillColor="#101820" android:pathData="M0,0h48v48h-48z" />
-    <path android:fillColor="#D9A63C" android:pathData="M9,13h30v4h-30zM9,22h22v4h-22zM9,31h15v4h-15z" />
-    <path android:fillColor="#E8EBEE" android:pathData="M35,21h4v15h-4z" />
+    <path android:fillColor="@color/receipt_paper" android:pathData="M0,0h48v48h-48z" />
+    <path android:fillColor="@color/receipt_ink" android:pathData="M10,6h28v32l-4,4 -3,-3 -4,3 -3,-3 -4,3 -3,-3 -3,3 -4,-4z" />
+    <path android:fillColor="@color/receipt_paper" android:pathData="M15,13h18v3h-18zM15,20h13v3h-13zM15,27h18v3h-18z" />
+    <path android:fillColor="@color/receipt_chilli" android:pathData="M30,20h3v3h-3z" />
 </vector>

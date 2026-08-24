@@ -1,5 +1,13 @@
 [
   {
+    "date": "2026-08-24",
+    "macrostructure": "Receipt Ledger",
+    "theme": "custom native",
+    "theme_axes": "light / expanded-grotesk / Indian-signage primary accents",
+    "enrichment": "perforation + category monograms",
+    "brief": "Receipts offline Android expense tracker for UPI-native Indian Gen Z"
+  },
+  {
     "date": "2026-08-20",
     "macrostructure": "Workbench",
     "theme": "custom native",

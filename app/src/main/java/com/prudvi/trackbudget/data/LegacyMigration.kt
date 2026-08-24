@@ -169,7 +169,7 @@ private fun legacySeedCategory(merchant: String): String? {
     val value = merchant.lowercase()
     return when {
         listOf("swiggy", "zomato", "restaurant", "cafe").any(value::contains) -> "food"
-        listOf("zepto", "bigbasket", "instamart", "grocery").any(value::contains) -> "groceries"
+        listOf("blinkit", "zepto", "bigbasket", "instamart", "grocery").any(value::contains) -> "groceries"
         listOf("amazon", "flipkart", "myntra").any(value::contains) -> "shopping"
         listOf("uber", "ola", "rapido", "metro", "fuel").any(value::contains) -> "transport"
         listOf("netflix", "spotify", "bookmyshow", "jiosaavn").any(value::contains) -> "entertainment"

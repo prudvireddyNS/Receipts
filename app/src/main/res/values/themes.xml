@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.TrackBudget" parent="android:style/Theme.Material.NoActionBar">
+    <style name="Theme.TrackBudget" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">#101820</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@color/app_launch_paper</item>
+        <item name="android:navigationBarColor">@color/app_launch_paper</item>
         <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:colorAccent">#D9A63C</item>
+        <item name="android:colorAccent">@color/receipt_ultramarine</item>
     </style>
 </resources>

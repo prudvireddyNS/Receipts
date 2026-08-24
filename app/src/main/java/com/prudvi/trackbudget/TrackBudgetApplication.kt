@@ -39,10 +39,10 @@ class TrackBudgetApplication : Application() {
                 },
                 NotificationChannel(
                     "category_limits",
-                    "Category limits",
+                    "Pace and limits",
                     NotificationManager.IMPORTANCE_DEFAULT,
                 ).apply {
-                    description = "Warnings when category spending reaches or exceeds a limit"
+                    description = "Pace and category-limit updates you choose to receive"
                 },
             ),
         )

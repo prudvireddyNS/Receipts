@@ -1,0 +1,9 @@
+{
+  "date": "2026-08-24",
+  "framework": "Android Jetpack Compose",
+  "font_stack": ["Archivo Variable", "Instrument Sans Variable", "Spline Sans Mono Variable"],
+  "palette_source": "app/src/main/java/com/prudvi/trackbudget/ui/Tokens.kt",
+  "motion": "Compose animation with system animator-scale opt-out",
+  "spacing": "4dp scale with a specified 20dp screen gutter",
+  "design_source": "docs/receipts-build-spec.html"
+}

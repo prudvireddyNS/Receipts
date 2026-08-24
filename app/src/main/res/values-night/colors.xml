@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="receipt_paper">#131618</color>
+    <color name="receipt_paper_raised">#1A1E20</color>
+    <color name="receipt_sunk">#0D0F11</color>
+    <color name="receipt_ink">#E7E5DC</color>
+    <color name="receipt_ink_soft">#BEC0B7</color>
+    <color name="receipt_fade">#8A8F87</color>
+    <color name="receipt_rule">#2A2F31</color>
+    <color name="receipt_rule_hard">#414749</color>
+    <color name="receipt_ultramarine">#8B97FF</color>
+    <color name="receipt_chrome">#F2C630</color>
+    <color name="receipt_chilli">#FF6B52</color>
+</resources>
