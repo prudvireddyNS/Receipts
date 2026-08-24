@@ -155,13 +155,33 @@ object ReceiptsFonts {
         ),
     )
     val instrumentSans = FontFamily(
-        Font(R.font.instrument_sans_variable, FontWeight.Normal),
-        Font(R.font.instrument_sans_variable, FontWeight.SemiBold),
+        Font(
+            resId = R.font.instrument_sans_variable,
+            weight = FontWeight.Normal,
+            variationSettings = FontVariation.Settings(FontVariation.weight(400)),
+        ),
+        Font(
+            resId = R.font.instrument_sans_variable,
+            weight = FontWeight.SemiBold,
+            variationSettings = FontVariation.Settings(FontVariation.weight(600)),
+        ),
     )
     val splineSansMono = FontFamily(
-        Font(R.font.spline_sans_mono_variable, FontWeight.Medium),
-        Font(R.font.spline_sans_mono_variable, FontWeight.SemiBold),
-        Font(R.font.spline_sans_mono_variable, FontWeight.Bold),
+        Font(
+            resId = R.font.spline_sans_mono_variable,
+            weight = FontWeight.Medium,
+            variationSettings = FontVariation.Settings(FontVariation.weight(500)),
+        ),
+        Font(
+            resId = R.font.spline_sans_mono_variable,
+            weight = FontWeight.SemiBold,
+            variationSettings = FontVariation.Settings(FontVariation.weight(600)),
+        ),
+        Font(
+            resId = R.font.spline_sans_mono_variable,
+            weight = FontWeight.Bold,
+            variationSettings = FontVariation.Settings(FontVariation.weight(700)),
+        ),
     )
 }
 

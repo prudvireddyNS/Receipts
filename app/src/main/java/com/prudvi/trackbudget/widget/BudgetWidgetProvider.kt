@@ -17,13 +17,10 @@ import com.prudvi.trackbudget.model.AppMode
 import com.prudvi.trackbudget.model.Direction
 import com.prudvi.trackbudget.model.Transaction
 import com.prudvi.trackbudget.model.TransactionStatus
-import com.prudvi.trackbudget.model.category
 import com.prudvi.trackbudget.model.dashboard
 import com.prudvi.trackbudget.model.periodLabel
+import com.prudvi.trackbudget.model.rollingDailyBaseline
 import java.text.NumberFormat
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -139,8 +136,8 @@ class BudgetWidgetProvider : AppWidgetProvider() {
             val ultra = ContextCompat.getColor(context, R.color.receipt_ultramarine)
             val daysLeft = (snapshot.daysInPeriod - snapshot.dayOfPeriod + 1).coerceAtLeast(1)
             val rolling = budget.period == "Rolling"
-            val rollingDaily = if (rolling) rollingDailyMedian(transactions, snapshot.range.start) else 0L
-            val paceBudget = if (rolling) rollingDaily * snapshot.daysInPeriod else budget.amountMinor
+            val rollingDaily = if (rolling) rollingDailyBaseline(transactions, snapshot.range.start) else null
+            val paceBudget = if (rolling) (rollingDaily ?: 0L) * snapshot.daysInPeriod else budget.amountMinor
             val marker = if (rolling) paceBudget.toFloat() / maxOf(snapshot.spentMinor, paceBudget, 1L)
             else snapshot.dayOfPeriod.toFloat() / snapshot.daysInPeriod.coerceAtLeast(1)
             val target = if (rolling) paceBudget.coerceAtLeast(1L).toFloat() else (budget.amountMinor * marker).coerceAtLeast(1f)
@@ -159,7 +156,8 @@ class BudgetWidgetProvider : AppWidgetProvider() {
                 else -> "SPENT THIS MONTH"
             }
             val paceDetail = when {
-                rolling -> "${money(rollingDaily)}/day is usual"
+                rollingDaily != null -> "${money(rollingDaily)}/day is usual"
+                rolling -> "Building your baseline"
                 snapshot.remainingMinor >= 0 -> "${money(snapshot.remainingMinor / daysLeft)}/day holds this"
                 else -> "${money(-snapshot.remainingMinor)} past this budget"
             }
@@ -191,19 +189,6 @@ class BudgetWidgetProvider : AppWidgetProvider() {
                 rows = rows,
                 reviewCount = transactions.count { it.status in setOf(TransactionStatus.NEEDS_REVIEW, TransactionStatus.NEEDS_RESOLUTION, TransactionStatus.UNPARSEABLE) },
             )
-        }
-
-        private fun rollingDailyMedian(transactions: List<Transaction>, currentStart: LocalDate): Long {
-            val zone = ZoneId.systemDefault()
-            val start = currentStart.minusDays(60)
-            val totals = transactions.asSequence()
-                .filter { it.direction == Direction.DEBIT && it.status == TransactionStatus.CONFIRMED && category(it.categoryId)?.notSpending != true }
-                .map { it to Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }
-                .filter { (_, date) -> !date.isBefore(start) && date.isBefore(currentStart) }
-                .groupBy({ it.second }, { it.first.amountMinor })
-                .mapValues { it.value.sum() }
-            val daily = List(60) { totals[start.plusDays(it.toLong())] ?: 0L }.sorted()
-            return (daily[29] + daily[30]) / 2
         }
 
         private fun money(minor: Long): String {

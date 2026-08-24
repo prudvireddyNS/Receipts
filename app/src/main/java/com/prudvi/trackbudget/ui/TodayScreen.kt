@@ -63,14 +63,13 @@ import com.prudvi.trackbudget.model.AppAmplitude
 import com.prudvi.trackbudget.model.AppMode
 import com.prudvi.trackbudget.model.Budget
 import com.prudvi.trackbudget.model.DashboardSnapshot
-import com.prudvi.trackbudget.model.Direction
 import com.prudvi.trackbudget.model.Goal
 import com.prudvi.trackbudget.model.PeriodSnapshot
 import com.prudvi.trackbudget.model.Transaction
 import com.prudvi.trackbudget.model.TransactionStatus
-import com.prudvi.trackbudget.model.category
 import com.prudvi.trackbudget.model.dashboard
 import com.prudvi.trackbudget.model.periodLabel
+import com.prudvi.trackbudget.model.rollingDailyBaseline
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import kotlin.math.roundToLong
@@ -209,8 +208,8 @@ private fun ChillHero(spentMinor: Long, periodSnapshots: List<PeriodSnapshot>, l
 private fun PaceHero(transactions: List<Transaction>, budget: Budget, snapshot: DashboardSnapshot, loud: Boolean) {
     val motionEnabled = rememberMotionEnabled()
     val rolling = budget.period == "Rolling"
-    val rollingBaseline = remember(transactions, snapshot.range) { rollingBaseline(transactions, snapshot.range.start) }
-    val budgetMinor = if (rolling) rollingBaseline * snapshot.daysInPeriod else budget.amountMinor
+    val rollingBaseline = remember(transactions, snapshot.range) { rollingDailyBaseline(transactions, snapshot.range.start) }
+    val budgetMinor = if (rolling) (rollingBaseline ?: 0L) * snapshot.daysInPeriod else budget.amountMinor
     val marker = if (rolling) {
         val maximum = maxOf(snapshot.spentMinor, budgetMinor, 1L)
         budgetMinor.toFloat() / maximum
@@ -224,7 +223,7 @@ private fun PaceHero(transactions: List<Transaction>, budget: Budget, snapshot: 
     } else paceProgress(snapshot.spentMinor, budgetMinor)
     val daysLeft = (snapshot.daysInPeriod - snapshot.dayOfPeriod + 1).coerceAtLeast(1)
     val holdMinor = when {
-        rolling -> rollingBaseline
+        rolling -> rollingBaseline ?: 0L
         snapshot.remainingMinor >= 0 -> snapshot.remainingMinor / daysLeft
         else -> kotlin.math.abs(snapshot.remainingMinor)
     }
@@ -381,16 +380,6 @@ private fun paceColor(state: PaceState): Color = when (state) {
     PaceState.Under -> receiptsColors.ultramarine
     PaceState.On -> receiptsColors.ink
     PaceState.Over -> receiptsColors.chilli
-}
-private fun rollingBaseline(transactions: List<Transaction>, currentStart: LocalDate): Long {
-    val start = currentStart.minusDays(60)
-    val totals = transactions.asSequence()
-        .filter { it.direction == Direction.DEBIT && it.status == TransactionStatus.CONFIRMED && category(it.categoryId)?.notSpending != true }
-        .filter { receiptDate(it.occurredAt).let { date -> !date.isBefore(start) && date.isBefore(currentStart) } }
-        .groupBy { receiptDate(it.occurredAt) }
-        .mapValues { (_, rows) -> rows.sumOf { it.amountMinor } }
-    val daily = List(60) { offset -> totals[start.plusDays(offset.toLong())] ?: 0L }.sorted()
-    return (daily[29] + daily[30]) / 2
 }
 private fun paceProgress(spentMinor: Long, budgetMinor: Long): Float = if (budgetMinor <= 0) 0f else (spentMinor.toFloat() / budgetMinor).coerceIn(0f, 1f)
 private val ReviewStatuses = setOf(TransactionStatus.NEEDS_REVIEW, TransactionStatus.NEEDS_RESOLUTION, TransactionStatus.UNPARSEABLE)

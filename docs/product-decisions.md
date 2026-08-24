@@ -20,6 +20,8 @@ Share infrastructure is available to Drops as well as Wrapped. Full monthly Wrap
 
 The pace state still uses the existing spending math. The “₹x/day holds this” line uses remaining budget divided by remaining days; if the budget is already exhausted it reports the amount past budget instead of displaying an absolute negative allowance as spendable money.
 
+Rolling pace remains neutral until there are at least 28 observed days and spending in three prior weeks. Its baseline is the median active-week total, adjusted by the share of active weeks, divided by seven. That preserves irregular spending frequency without letting zero-heavy daily medians collapse the baseline or treating every day like an active spending day.
+
 ### Learned rules are direction-aware
 
 A merchant rule now records debit or credit direction. Old three-field rules still load, but they are only applied where their category is direction-compatible. This prevents a learned refund from making a later debit disappear from spending.

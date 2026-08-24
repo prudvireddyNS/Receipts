@@ -83,6 +83,29 @@ class ReceiptsFeatureRulesTest {
     }
 
     @Test
+    fun rollingBaselineIsNeutralWithoutEnoughHistory() {
+        val start = LocalDate.of(2026, 8, 1)
+        assertEquals(null, rollingDailyBaseline(emptyList(), start, zone))
+        val thin = listOf(
+            transaction("thin-1", 700_00, start.minusDays(10), 12, "One", "food"),
+            transaction("thin-2", 700_00, start.minusDays(5), 12, "Two", "food"),
+            transaction("thin-3", 700_00, start.minusDays(1), 12, "Three", "food"),
+        )
+        assertEquals(null, rollingDailyBaseline(thin, start, zone))
+    }
+
+    @Test
+    fun rollingBaselineHandlesSparseIrregularSpendingWithoutCollapsingToZero() {
+        val start = LocalDate.of(2026, 8, 1)
+        val history = listOf(
+            transaction("week-1", 700_00, start.minusDays(55), 12, "One", "food"),
+            transaction("week-3", 1_400_00, start.minusDays(38), 12, "Two", "food"),
+            transaction("week-7", 700_00, start.minusDays(10), 12, "Three", "food"),
+        )
+        assertEquals(3_750L, rollingDailyBaseline(history, start, zone))
+    }
+
+    @Test
     fun refundMatchingRequiresAnExactAmountOrTheSameMerchant() {
         val credit = transaction("refund", 500_00, today, 12, "Myntra", "refund", Direction.CREDIT)
         val exact = transaction("exact", 500_00, today.minusDays(10), 12, "Different shop", "shopping")
