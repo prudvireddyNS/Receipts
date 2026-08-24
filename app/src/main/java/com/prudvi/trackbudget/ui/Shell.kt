@@ -103,11 +103,11 @@ private fun ReceiptsApp(repository: TrackRepository) {
     var importedCount by remember { mutableStateOf<Int?>(null) }
     var permissionRevision by remember { mutableIntStateOf(0) }
 
-    fun scanInbox(force: Boolean = false) {
+    fun scanInbox() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) return
         scope.launch {
             scanning = true
-            importedCount = withContext(Dispatchers.IO) { repository.importInbox(force = force) }
+            importedCount = withContext(Dispatchers.IO) { repository.importInbox() }
             scanning = false
         }
     }
@@ -116,7 +116,7 @@ private fun ReceiptsApp(repository: TrackRepository) {
         permissionRevision++
         if (result[Manifest.permission.READ_SMS] == true) {
             (context.applicationContext as TrackBudgetApplication).startSmsObserver()
-            scanInbox(force = true)
+            scanInbox()
         }
     }
     val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -171,7 +171,7 @@ private fun ReceiptsApp(repository: TrackRepository) {
         importedCount = importedCount,
         onRequestSms = requestSms,
         onRequestNotifications = requestNotifications,
-        onScan = { if (smsInboxGranted) scanInbox(force = true) else requestSms() },
+        onScan = { if (smsInboxGranted) scanInbox() else requestSms() },
         onAdd = { transaction -> repository.addManual(transaction.amountMinor, transaction.merchant, transaction.categoryId ?: "misc", transaction.direction, transaction.occurredAt) },
         onSave = repository::save,
         onDelete = repository::delete,

@@ -139,7 +139,7 @@ fun SettingsScreen(
             item {
                 SettingsSection("SMS") {
                     FactRow("Status", smsStatus(smsInboxGranted, smsLiveGranted))
-                    ActionRow(if (smsInboxGranted) "Rescan inbox" else "Allow SMS reading", smsScanState(scanning, importedCount)) {
+                    ActionRow(if (smsInboxGranted) "Check inbox" else "Allow SMS reading", smsScanState(scanning, importedCount)) {
                         if (smsInboxGranted) onRescanSms() else onRequestSms()
                     }
                     Text("Manual entry works with SMS off.", color = receiptsColors.fade, style = ReceiptsType.meta)

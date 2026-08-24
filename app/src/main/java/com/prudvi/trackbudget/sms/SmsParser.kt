@@ -16,9 +16,13 @@ object SmsParser {
     private val balance = Regex("""(?i)\b(?:avl|available|clear|closing)?\s*bal(?:ance)?[^\d]{0,12}(?:inr|rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)""")
     private val account = Regex("""(?i)\b(?:a/c|acct|account|card|ac)\b[^\d]{0,10}(?:[xX*]+)?(\d{3,6})|\b[xX*]{2,}(\d{3,6})\b""")
     private val reference = Regex("""(?i)\b(?:ref|rrn|utr|txn|transaction)\s*(?:no\.?|id|#)?[:\s]*([A-Za-z0-9]{6,22})\b""")
-    private val merchantPatterns = listOf(
-        Regex("""(?i)\b(?:at|to|towards|in favour of|trf to|vpa|from)\s+["']?([A-Za-z0-9@._&' -]{3,48}?)(?=\s+(?:on|ref|upi|rrn|txn|utr|avl|bal|dt|using|via|\.|,|$))"""),
+    private val debitMerchantPatterns = listOf(
+        Regex("""(?i)\b(?:paid\s+to|sent\s+to|transferred\s+to|trf\s+to|at|to|towards|in favour of)\s+(?:(?:upi(?:\s+id)?|vpa)\s*[:\-]?\s*)?["']?([A-Za-z0-9@._&' -]{2,64}?)(?=\s+(?:on|ref|upi|rrn|txn|utr|avl|bal|dt|date|using|via|from|a/c|acct|account)\b|[.,;]|$)"""),
         Regex("""(?i)\binfo[:\s]+([A-Za-z0-9@._&' -]{3,40})"""),
+        Regex("""(?i)\b([\w.-]{2,64}@[a-z]{2,64})\b"""),
+    )
+    private val creditMerchantPatterns = listOf(
+        Regex("""(?i)\bfrom\s+(?:(?:upi(?:\s+id)?|vpa)\s*[:\-]?\s*)?["']?([A-Za-z0-9@._&' -]{2,64}?)(?=\s+(?:on|ref|upi|rrn|txn|utr|avl|bal|dt|date|using|via|to|a/c|acct|account)\b|[.,;]|$)"""),
         Regex("""(?i)\b([\w.-]{2,64}@[a-z]{2,64})\b"""),
     )
 
@@ -70,7 +74,7 @@ object SmsParser {
 
         val amountMinor = selected.second.movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValueExact()
         if (amountMinor <= 0) return null
-        val rawMerchant = merchantPatterns.firstNotNullOfOrNull { it.find(body)?.groupValues?.getOrNull(1) }
+        val rawMerchant = merchantFromBody(body, direction)
         val merchant = normalizeMerchant(rawMerchant.orEmpty()).ifBlank {
             if (direction == Direction.CREDIT) "Money received" else "Uncategorised payment"
         }
@@ -94,6 +98,20 @@ object SmsParser {
         )
     }
 
+    fun merchantFromBody(body: String, direction: Direction): String? {
+        val patterns = if (direction == Direction.DEBIT) debitMerchantPatterns else creditMerchantPatterns
+        return patterns.firstNotNullOfOrNull { pattern ->
+            pattern.find(body)?.groupValues?.getOrNull(1)?.takeIf { candidate ->
+                val normalized = normalizeMerchant(candidate)
+                normalized.isNotBlank() &&
+                    !normalized.startsWith("a c ") &&
+                    !normalized.startsWith("account ") &&
+                    !normalized.startsWith("card ") &&
+                    normalized !in setOf("your account", "your a c", "upi")
+            }
+        }
+    }
+
     fun normalizeMerchant(raw: String): String = raw.lowercase()
         .replace(Regex("""\b(pvt|ltd|limited|inc|llp|india|bangalore|mumbai|delhi)\b"""), "")
         .replace(Regex("""[^a-z0-9@ ]"""), " ")
@@ -101,5 +119,6 @@ object SmsParser {
         .trim()
         .let { if ('@' in it) it.substringBefore('@') else it }
         .take(40)
-        .replaceFirstChar { it.titlecase() }
+        .split(' ')
+        .joinToString(" ") { word -> word.replaceFirstChar(Char::titlecase) }
 }

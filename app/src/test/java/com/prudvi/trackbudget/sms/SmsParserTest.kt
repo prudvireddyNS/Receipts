@@ -26,6 +26,30 @@ class SmsParserTest {
     }
 
     @Test
+    fun usesPayeeAfterToAsDebitTitle() {
+        val result = SmsParser.parse(
+            "HDFCBK",
+            "Rs 200.00 debited from a/c XX1234 to Blinkit Commerce via UPI Ref 452312345678.",
+            now,
+        )
+
+        requireNotNull(result)
+        assertEquals("Blinkit Commerce", result.merchant)
+    }
+
+    @Test
+    fun stripsUpiPrefixFromPayeeAfterTo() {
+        val result = SmsParser.parse(
+            "HDFCBK",
+            "Rs 240.00 debited from a/c XX1234 to UPI ID: mohan@ybl on 24-08-26 Ref 452312345679.",
+            now,
+        )
+
+        requireNotNull(result)
+        assertEquals("Mohan", result.merchant)
+    }
+
+    @Test
     fun parsesCreditForImmediateResolution() {
         val result = SmsParser.parse(
             "AD-HDFCBK",

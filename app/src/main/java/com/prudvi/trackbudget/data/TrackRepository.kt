@@ -29,6 +29,7 @@ class TrackRepository(private val context: Context) {
 
     init {
         migrateLegacyData(context, database, preferences)
+        backfillMerchantTitles()
         _transactions.value = database.transactions()
         _learnedRules.value = loadLearnedRules()
         _ignoredSources.value = preferences.getStringSet("ignored_sources", emptySet()).orEmpty().toSet()
@@ -158,7 +159,7 @@ class TrackRepository(private val context: Context) {
     }
 
     @Synchronized
-    fun importInbox(days: Int = 90, force: Boolean = false): Int {
+    fun importInbox(days: Int = 90): Int {
         if (preferences.getBoolean("legacy_sms_highwater_pending", false)) {
             val newestId = context.contentResolver.query(
                 Telephony.Sms.Inbox.CONTENT_URI,
@@ -181,18 +182,11 @@ class TrackRepository(private val context: Context) {
         val lastId = preferences.getLong("last_sms_id", 0)
         var highestId = lastId
         var imported = 0
-        val knownMessages = if (force) {
-            database.transactions().mapNotNullTo(mutableSetOf()) { transaction ->
-                transaction.rawMessage?.let { "${transaction.sender}|${transaction.occurredAt}|$it" }
-            }
-        } else mutableSetOf()
-        val selection = if (force) "${Telephony.Sms.DATE} >= ?" else "${Telephony.Sms.DATE} >= ? AND ${Telephony.Sms._ID} > ?"
-        val arguments = if (force) arrayOf(since.toString()) else arrayOf(since.toString(), lastId.toString())
         context.contentResolver.query(
             Telephony.Sms.Inbox.CONTENT_URI,
             arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
-            selection,
-            arguments,
+            "${Telephony.Sms.DATE} >= ? AND ${Telephony.Sms._ID} > ?",
+            arrayOf(since.toString(), lastId.toString()),
             "${Telephony.Sms._ID} ASC",
         )?.use { cursor ->
             val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
@@ -204,14 +198,8 @@ class TrackRepository(private val context: Context) {
                 highestId = maxOf(highestId, id)
                 val sender = cursor.getString(senderIndex) ?: continue
                 val body = cursor.getString(bodyIndex) ?: continue
-                val receivedAt = cursor.getLong(dateIndex)
-                val messageIdentity = "$sender|$receivedAt|$body"
-                if (messageIdentity in knownMessages) continue
-                val transaction = parseSms(sender, body, receivedAt) ?: continue
-                if (database.insert(transaction)) {
-                    imported++
-                    knownMessages += messageIdentity
-                }
+                val transaction = parseSms(sender, body, cursor.getLong(dateIndex)) ?: continue
+                if (database.insert(transaction)) imported++
             }
         }
         preferences.edit().putLong("last_sms_id", highestId).apply()
@@ -254,6 +242,17 @@ class TrackRepository(private val context: Context) {
         )
         samples.forEach(database::insert)
         refresh()
+    }
+
+    private fun backfillMerchantTitles() {
+        if (preferences.getInt("merchant_title_backfill", 0) >= 1) return
+        database.transactions().forEach { transaction ->
+            if (transaction.merchant !in setOf("Uncategorised payment", "Unknown payment")) return@forEach
+            val body = transaction.rawMessage ?: return@forEach
+            val merchant = SmsParser.merchantFromBody(body, transaction.direction)?.let(SmsParser::normalizeMerchant).orEmpty()
+            if (merchant.isNotBlank()) database.update(transaction.copy(merchant = merchant))
+        }
+        preferences.edit().putInt("merchant_title_backfill", 1).apply()
     }
 
     private fun parseSms(sender: String, body: String, receivedAt: Long): Transaction? {

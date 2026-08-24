@@ -22,13 +22,17 @@ The pace state still uses the existing spending math. The “₹x/day holds this
 
 Rolling pace remains neutral until there are at least 28 observed days and spending in three prior weeks. Its baseline is the median active-week total, adjusted by the share of active weeks, divided by seven. That preserves irregular spending frequency without letting zero-heavy daily medians collapse the baseline or treating every day like an active spending day.
 
+### SMS titles come from the payee after “to”
+
+For debit messages, the first meaningful payee after `to`, `paid to`, `sent to`, or an equivalent transfer phrase becomes the default receipt title. UPI/VPA prefixes are stripped, and existing generic SMS titles are backfilled once without changing amount, category, direction, or status.
+
 ### Learned rules are direction-aware
 
 A merchant rule now records debit or credit direction. Old three-field rules still load, but they are only applied where their category is direction-compatible. This prevents a learned refund from making a later debit disappear from spending.
 
 ### Clearing transactions does not silently repopulate them
 
-“Clear all transaction data” also removes derived Wrapped snapshots and Drop history while preserving Goals and earned Stamps. The SMS high-water mark stays in place so data does not silently return; an explicit pull-to-rescan can still rebuild receipts from the last 90 days.
+“Clear all transaction data” also removes derived Wrapped snapshots and Drop history while preserving Goals and earned Stamps. The SMS high-water mark stays in place so data does not silently return. Pull-to-refresh and “Check inbox” only process SMS IDs newer than that high-water mark; the app never bulk-imports old inbox history during normal use.
 
 ### Category presentation belongs to the UI system
 
