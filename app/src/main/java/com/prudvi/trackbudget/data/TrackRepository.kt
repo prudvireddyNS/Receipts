@@ -245,14 +245,14 @@ class TrackRepository(private val context: Context) {
     }
 
     private fun backfillMerchantTitles() {
-        if (preferences.getInt("merchant_title_backfill", 0) >= 1) return
+        if (preferences.getInt("merchant_title_backfill", 0) >= 2) return
         database.transactions().forEach { transaction ->
             if (transaction.merchant !in setOf("Uncategorised payment", "Unknown payment")) return@forEach
             val body = transaction.rawMessage ?: return@forEach
             val merchant = SmsParser.merchantFromBody(body, transaction.direction)?.let(SmsParser::normalizeMerchant).orEmpty()
             if (merchant.isNotBlank()) database.update(transaction.copy(merchant = merchant))
         }
-        preferences.edit().putInt("merchant_title_backfill", 1).apply()
+        preferences.edit().putInt("merchant_title_backfill", 2).apply()
     }
 
     private fun parseSms(sender: String, body: String, receivedAt: Long): Transaction? {

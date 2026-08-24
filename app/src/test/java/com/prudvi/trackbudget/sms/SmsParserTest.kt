@@ -38,6 +38,18 @@ class SmsParserTest {
     }
 
     @Test
+    fun parsesPayeeBeforeParenthesizedUpiReference() {
+        val result = SmsParser.parse(
+            "HDFCBK",
+            "Rs 163.00 debited from a/c XX1234 to Blinkit Commerce (UPI Ref: 452312345680). Not you? call support.",
+            now,
+        )
+
+        requireNotNull(result)
+        assertEquals("Blinkit Commerce", result.merchant)
+    }
+
+    @Test
     fun stripsUpiPrefixFromPayeeAfterTo() {
         val result = SmsParser.parse(
             "HDFCBK",

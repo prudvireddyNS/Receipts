@@ -17,12 +17,12 @@ object SmsParser {
     private val account = Regex("""(?i)\b(?:a/c|acct|account|card|ac)\b[^\d]{0,10}(?:[xX*]+)?(\d{3,6})|\b[xX*]{2,}(\d{3,6})\b""")
     private val reference = Regex("""(?i)\b(?:ref|rrn|utr|txn|transaction)\s*(?:no\.?|id|#)?[:\s]*([A-Za-z0-9]{6,22})\b""")
     private val debitMerchantPatterns = listOf(
-        Regex("""(?i)\b(?:paid\s+to|sent\s+to|transferred\s+to|trf\s+to|at|to|towards|in favour of)\s+(?:(?:upi(?:\s+id)?|vpa)\s*[:\-]?\s*)?["']?([A-Za-z0-9@._&' -]{2,64}?)(?=\s+(?:on|ref|upi|rrn|txn|utr|avl|bal|dt|date|using|via|from|a/c|acct|account)\b|[.,;]|$)"""),
+        Regex("""(?i)\b(?:paid\s+to|sent\s+to|transferred\s+to|trf\s+to|at|to|towards|in favour of)\s+(?:(?:upi(?:\s+id)?|vpa)\s*[:\-]?\s*)?["']?([A-Za-z0-9@._&' -]{2,64}?)(?=\s+(?:on|ref|upi|rrn|txn|utr|avl|bal|dt|date|using|via|from|a/c|acct|account)\b|[().,;]|$)"""),
         Regex("""(?i)\binfo[:\s]+([A-Za-z0-9@._&' -]{3,40})"""),
         Regex("""(?i)\b([\w.-]{2,64}@[a-z]{2,64})\b"""),
     )
     private val creditMerchantPatterns = listOf(
-        Regex("""(?i)\bfrom\s+(?:(?:upi(?:\s+id)?|vpa)\s*[:\-]?\s*)?["']?([A-Za-z0-9@._&' -]{2,64}?)(?=\s+(?:on|ref|upi|rrn|txn|utr|avl|bal|dt|date|using|via|to|a/c|acct|account)\b|[.,;]|$)"""),
+        Regex("""(?i)\bfrom\s+(?:(?:upi(?:\s+id)?|vpa)\s*[:\-]?\s*)?["']?([A-Za-z0-9@._&' -]{2,64}?)(?=\s+(?:on|ref|upi|rrn|txn|utr|avl|bal|dt|date|using|via|to|a/c|acct|account)\b|[().,;]|$)"""),
         Regex("""(?i)\b([\w.-]{2,64}@[a-z]{2,64})\b"""),
     )
 
