@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -80,7 +79,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
@@ -95,7 +93,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.isUnspecified
 import androidx.compose.ui.unit.sp
 import com.prudvi.trackbudget.model.Direction
 import com.prudvi.trackbudget.model.Transaction
@@ -245,13 +242,6 @@ fun ReceiptIconButton(
 }
 
 @Composable
-fun centeredTrackingOffset(letterSpacing: androidx.compose.ui.unit.TextUnit): Dp {
-    if (letterSpacing.isUnspecified) return 0.dp
-    val density = LocalDensity.current
-    return with(density) { (letterSpacing.toPx() / 2f).toDp() }
-}
-
-@Composable
 fun ReceiptPill(
     text: String,
     modifier: Modifier = Modifier,
@@ -377,7 +367,7 @@ fun ReceiptRow(
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(receiptMerchant(transaction), color = receiptsColors.ink, style = ReceiptsType.bodyStrong, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = if (excluded) TextDecoration.LineThrough else null, modifier = Modifier.weight(1f, fill = false))
-                if (transaction.committed) ReceiptCommittedTag()
+                if (transaction.committed) ReceiptSkipTag()
             }
             Text("${categoryName(transaction.categoryId)} · ${receiptTime(transaction.occurredAt)}", color = receiptsColors.fade, style = ReceiptsType.meta, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -388,14 +378,22 @@ fun ReceiptRow(
 }
 
 @Composable
-fun ReceiptCommittedTag(modifier: Modifier = Modifier) {
+/**
+ * Marks a receipt that is skipped when working out the daily pace.
+ *
+ * Not to be confused with the "fixed obligations" in Settings, which are a declared monthly amount
+ * taken off the budget before the period starts. This is a single real payment that still counts in
+ * full towards what was spent — it is only held out of day-by-day pacing, so one lumpy purchase
+ * cannot crater "safe to spend today" or pose as a typical day in the projection.
+ */
+fun ReceiptSkipTag(modifier: Modifier = Modifier) {
     Box(
         modifier.clip(RoundedCornerShape(ReceiptsRadius.tiny))
             .background(receiptsColors.warm)
             .border(1.dp, receiptsColors.rule, RoundedCornerShape(ReceiptsRadius.tiny))
             .padding(horizontal = 5.dp, vertical = 1.dp),
     ) {
-        Text("FIXED", color = receiptsColors.fade, style = ReceiptsType.stamp.copy(fontSize = 8.sp, letterSpacing = 0.8.sp))
+        Text("SKIP", color = receiptsColors.fade, style = ReceiptsType.stamp.copy(fontSize = 8.sp, letterSpacing = 0.8.sp))
     }
 }
 

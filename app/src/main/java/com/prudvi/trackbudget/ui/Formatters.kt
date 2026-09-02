@@ -21,8 +21,6 @@ fun receiptMoney(minor: Long): String {
     return "₹${formatter.format(value / 100.0)}"
 }
 
-fun receiptWholeMoney(minor: Long): String = "₹${NumberFormat.getIntegerInstance(IndianLocale).format(kotlin.math.round(abs(minor) / 100.0).toLong())}"
-
 fun receiptSignedMoney(transaction: Transaction): String =
     (if (transaction.direction == Direction.CREDIT) "+" else "−") + receiptMoney(transaction.amountMinor)
 
@@ -46,22 +44,4 @@ fun receiptTime(epochMillis: Long): String = Instant.ofEpochMilli(epochMillis).a
     .format(DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)).lowercase(Locale.ENGLISH)
 fun receiptDate(epochMillis: Long): LocalDate = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
 
-fun receiptMeta(transaction: Transaction): String = buildString {
-    append(receiptDayDate(receiptDate(transaction.occurredAt)))
-    append(" · ")
-    append(receiptTime(transaction.occurredAt))
-    transaction.accountTail?.let { append(" · ••$it") }
-    append(" · ")
-    append(transaction.source.name.lowercase().replaceFirstChar(Char::titlecase))
-}
-
 fun decimalToMinor(value: String): Long = value.toBigDecimalOrNull()?.movePointRight(2)?.toLong() ?: 0
-fun integerRupeesToMinor(value: String): Long = (value.toLongOrNull() ?: 0L) * 100L
-fun receiptPercent(value: Float): String = "${(value.coerceIn(0f, 1f) * 100).toInt()}%"
-
-fun spendLabel(period: String): String = when (period) {
-    "Week" -> "Spent this week"
-    "Rolling" -> "Spent in 30 days"
-    "Custom" -> "Spent this period"
-    else -> "Spent this month"
-}

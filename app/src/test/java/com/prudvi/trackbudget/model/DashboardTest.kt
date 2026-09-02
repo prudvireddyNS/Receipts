@@ -10,6 +10,12 @@ class DashboardTest {
     private val nowDateTime = ZonedDateTime.now().withDayOfMonth(10).withHour(12)
     private val now = nowDateTime.toInstant().toEpochMilli()
 
+    private fun dayOfMonth(day: Int): Long =
+        nowDateTime.withDayOfMonth(day).toInstant().toEpochMilli()
+
+    private fun monthsAgo(months: Long): Long =
+        nowDateTime.minusMonths(months).toInstant().toEpochMilli()
+
     @Test
     fun countsIncludedDebitsAndCategoryReviewButNotGeneralReview() {
         val items = listOf(
@@ -133,8 +139,167 @@ class DashboardTest {
         assertEquals(12_300_00, result.spentMinor)
         assertEquals(12_000_00L, result.categoryTotals["rent"])
         assertEquals(12_000_00L, result.committedMinor)
-        // But the rent payment doesn't crater today's safe-to-spend.
-        assertEquals(30_000_00 / 3 - 300_00, result.safeTodayMinor)
+        // The rent doesn't crater today's safe-to-spend — but it is still money that has left, so
+        // today gets an even share of what actually remains (₹17,700 / 3) less the ₹300 lunch,
+        // rather than a share of the whole budget as if the rent had never been paid.
+        assertEquals((30_000_00 - 12_000_00) / 3 - 300_00, result.safeTodayMinor)
+    }
+
+    @Test
+    fun declaredObligationsComeOffTheBudgetRatherThanOntoSpending() {
+        val today = nowDateTime.toLocalDate()
+        val budget = Budget(
+            amountMinor = 30_000_00,
+            period = "Custom",
+            startEpochDay = today.toEpochDay(),
+            endEpochDay = today.plusDays(29).toEpochDay(),
+            commitments = listOf(Commitment("rent", "Rent", 12_000_00)),
+        )
+        val lunch = transaction("lunch", 300_00, Direction.DEBIT, "food")
+
+        val result = dashboard(listOf(lunch), budget, now)
+
+        // The obligation never poses as spending...
+        assertEquals(300_00, result.spentMinor)
+        assertEquals(0L, result.committedMinor)
+        // ...it comes off the ceiling instead.
+        assertEquals(12_000_00L, result.obligationsMinor)
+        assertEquals(18_000_00L, result.spendableMinor)
+        assertEquals(18_000_00L - 300_00, result.remainingMinor)
+        // Category totals now reconcile with the headline spend, which they never did before.
+        assertEquals(300_00, result.categoryTotals.values.sum())
+        // Pacing still runs off what's actually left.
+        assertEquals(18_000_00 / 30 - 300_00, result.safeTodayMinor)
+    }
+
+    @Test
+    fun obligationsLargerThanTheBudgetLeaveNothingSpendableRatherThanGoingNegative() {
+        val today = nowDateTime.toLocalDate()
+        val budget = Budget(
+            amountMinor = 10_000_00,
+            period = "Custom",
+            startEpochDay = today.toEpochDay(),
+            endEpochDay = today.plusDays(29).toEpochDay(),
+            commitments = listOf(Commitment("rent", "Rent", 25_000_00)),
+        )
+
+        val result = dashboard(emptyList(), budget, now)
+
+        assertEquals(0L, result.spendableMinor)
+        assertEquals(0L, result.remainingMinor)
+    }
+
+    @Test
+    fun disabledObligationsAreIgnored() {
+        val today = nowDateTime.toLocalDate()
+        val budget = Budget(
+            amountMinor = 30_000_00,
+            period = "Custom",
+            startEpochDay = today.toEpochDay(),
+            endEpochDay = today.plusDays(29).toEpochDay(),
+            commitments = listOf(Commitment("rent", "Rent", 12_000_00, enabled = false)),
+        )
+
+        val result = dashboard(emptyList(), budget, now)
+
+        assertEquals(0L, result.obligationsMinor)
+        assertEquals(30_000_00L, result.spendableMinor)
+    }
+
+    @Test
+    fun aMonthlyPeriodChargesTheDeclaredObligationExactly() {
+        val commitments = listOf(Commitment("rent", "Rent", 20_000_00))
+        // August has 31 days; the old days/30 proration billed ₹20,666.66 for a ₹20,000 rent.
+        val august = Budget(amountMinor = 50_000_00, period = "Month", resetDay = 1, commitments = commitments)
+        assertEquals(20_000_00L, august.obligationsMinor(budgetRange(august, LocalDate.of(2026, 8, 10))))
+        // February is short; it must not be discounted either.
+        val february = Budget(amountMinor = 50_000_00, period = "Month", resetDay = 1, commitments = commitments)
+        assertEquals(20_000_00L, february.obligationsMinor(budgetRange(february, LocalDate.of(2026, 2, 10))))
+        // A mid-month reset day is still a whole month.
+        val shifted = Budget(amountMinor = 50_000_00, period = "Month", resetDay = 28, commitments = commitments)
+        assertEquals(20_000_00L, shifted.obligationsMinor(budgetRange(shifted, LocalDate.of(2026, 8, 10))))
+    }
+
+    @Test
+    fun aWeeklyPeriodOnlyChargesItsShareOfTheObligation() {
+        val weekly = Budget(
+            amountMinor = 12_000_00,
+            period = "Week",
+            resetDay = 1,
+            commitments = listOf(Commitment("rent", "Rent", 30_000_00)),
+        )
+        val range = budgetRange(weekly, LocalDate.of(2026, 8, 12))
+
+        assertEquals(7, range.days)
+        assertEquals(30_000_00L * 7 / 30, weekly.obligationsMinor(range))
+    }
+
+    @Test
+    fun aRepeatedEverydayMerchantIsNotAFixedCommitment() {
+        // Three visits to the same food place, varying amounts, all inside one month.
+        val history = listOf(
+            transaction("a", 250_00, Direction.DEBIT, "food").copy(merchant = "Food Stories", occurredAt = dayOfMonth(4)),
+            transaction("b", 480_00, Direction.DEBIT, "food").copy(merchant = "Food Stories", occurredAt = dayOfMonth(6)),
+            transaction("c", 1_100_00, Direction.DEBIT, "food").copy(merchant = "Food Stories", occurredAt = dayOfMonth(8)),
+        )
+
+        val committed = autoDetectCommitted("food", "Food Stories", 300_00, Direction.DEBIT, history, DefaultCommittedCategoryIds)
+
+        assertEquals(false, committed)
+    }
+
+    @Test
+    fun aSteadyMonthlyChargeIsAFixedCommitment() {
+        val history = listOf(
+            transaction("a", 4_990_00, Direction.DEBIT, "services").copy(merchant = "Gym Co", occurredAt = monthsAgo(1)),
+            transaction("b", 4_990_00, Direction.DEBIT, "services").copy(merchant = "Gym Co", occurredAt = monthsAgo(2)),
+        )
+
+        val committed = autoDetectCommitted("services", "Gym Co", 4_990_00, Direction.DEBIT, history, DefaultCommittedCategoryIds)
+
+        assertEquals(true, committed)
+    }
+
+    @Test
+    fun aSmallRepeatingChargeStaysFlexible() {
+        val history = listOf(
+            transaction("a", 49_00, Direction.DEBIT, "food").copy(merchant = "Chai Point", occurredAt = monthsAgo(1)),
+            transaction("b", 49_00, Direction.DEBIT, "food").copy(merchant = "Chai Point", occurredAt = monthsAgo(2)),
+        )
+
+        val committed = autoDetectCommitted("food", "Chai Point", 49_00, Direction.DEBIT, history, DefaultCommittedCategoryIds)
+
+        assertEquals(false, committed)
+    }
+
+    @Test
+    fun aDeclaredCommittedCategoryIsStillFixedOnTheFirstCharge() {
+        val committed = autoDetectCommitted("rent", "Landlord", 20_000_00, Direction.DEBIT, emptyList(), DefaultCommittedCategoryIds)
+
+        assertEquals(true, committed)
+    }
+
+    @Test
+    fun skippedSpendNeverInflatesTodaysAllowance() {
+        // A skipped receipt is added to spending and used for nothing else, so today's allowance is
+        // simply an even share of what is left — never more, however large the skipped payment.
+        val today = nowDateTime.toLocalDate()
+        val budget = Budget(
+            amountMinor = 20_000_00,
+            period = "Custom",
+            startEpochDay = today.minusDays(5).toEpochDay(),
+            endEpochDay = today.plusDays(25).toEpochDay(),
+        )
+        val earlier = transaction("earlier", 3_840_00, Direction.DEBIT, "food")
+            .copy(occurredAt = nowDateTime.minusDays(3).toInstant().toEpochMilli())
+        val skippedToday = transaction("skipped", 5_300_00, Direction.DEBIT, "transport").copy(committed = true)
+
+        val result = dashboard(listOf(earlier, skippedToday), budget, now)
+
+        assertEquals(9_140_00, result.spentMinor)
+        val daysRemaining = result.daysInPeriod - result.dayOfPeriod + 1
+        // Exactly an even share of what remains, matching the "left per day" the home screen shows.
+        assertEquals(result.remainingMinor / daysRemaining, result.safeTodayMinor)
     }
 
     @Test

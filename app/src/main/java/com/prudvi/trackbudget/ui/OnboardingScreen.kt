@@ -8,13 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -211,39 +209,4 @@ private fun BudgetPick(text: String, selected: Boolean, modifier: Modifier = Mod
             .padding(horizontal = 12.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) { Text(text, color = if (selected) receiptsColors.chromeOn else receiptsColors.inkSoft, style = if (text.startsWith("₹")) ReceiptsType.amount.copy(fontSize = 13.sp) else ReceiptsType.bodyStrong.copy(fontSize = 12.sp), maxLines = 1) }
-}
-
-@Composable
-private fun NumericStepper(label: String, value: String, onStep: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        Text(label, Modifier.weight(1f), color = receiptsColors.inkSoft, style = ReceiptsType.bodyStrong.copy(fontSize = 12.sp))
-        StepBox("−", "Decrease $label") { onStep(-1) }
-        Text(value, color = receiptsColors.ink, style = ReceiptsType.amount.copy(fontSize = 13.sp), modifier = Modifier.padding(horizontal = 4.dp))
-        StepBox("+", "Increase $label") { onStep(1) }
-    }
-}
-
-@Composable
-private fun WeekdayStepper(selected: Int, onSelected: (Int) -> Unit) {
-    val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-    NumericStepper("Week starts", days[(selected - 1).coerceIn(0, 6)]) { delta ->
-        val next = ((selected - 1 + delta + 7) % 7) + 1
-        onSelected(next)
-    }
-}
-
-@Composable
-private fun StepBox(text: String, description: String, onClick: () -> Unit) {
-    Box(
-        Modifier.size(48.dp).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            Modifier.size(28.dp)
-                .clip(RoundedCornerShape(ReceiptsRadius.small))
-                .background(receiptsColors.paper)
-                .border(ReceiptsStroke.width, receiptsColors.ink, RoundedCornerShape(ReceiptsRadius.small)),
-            contentAlignment = Alignment.Center,
-        ) { Text(text, color = receiptsColors.ink, style = ReceiptsType.heading.copy(fontSize = 14.sp)) }
-    }
 }

@@ -38,8 +38,6 @@ data class Goal(
         require(targetMinor > 0) { "Goal target must be positive" }
     }
 
-    val progress: Float = (savedMinor.toFloat() / targetMinor).coerceIn(0f, 1f)
-    val isComplete: Boolean = completedAt != null || savedMinor >= targetMinor
 }
 
 data class EarnedStamp(
@@ -77,11 +75,6 @@ fun periodKey(range: BudgetRange): String {
     } else {
         "${range.start.toEpochDay()}:${range.endInclusive.toEpochDay()}"
     }
-}
-
-fun previousMonthlyRange(today: LocalDate = LocalDate.now()): BudgetRange {
-    val start = today.withDayOfMonth(1).minusMonths(1)
-    return BudgetRange(start, start.withDayOfMonth(start.lengthOfMonth()))
 }
 
 fun Long.toLocalDate(zone: ZoneId = ZoneId.systemDefault()): LocalDate = Instant.ofEpochMilli(this).atZone(zone).toLocalDate()

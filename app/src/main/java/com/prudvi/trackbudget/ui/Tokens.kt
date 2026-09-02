@@ -207,12 +207,8 @@ object ReceiptsSpace {
     val x3 = 12.dp
     val x4 = 16.dp
     val screen = 20.dp
-    val x5 = 20.dp
-    val x6 = 24.dp
-    val x7 = 28.dp
     val x8 = 32.dp
     val x12 = 48.dp
-    val x16 = 64.dp
 }
 
 object ReceiptsRadius {
@@ -236,10 +232,7 @@ object ReceiptsMotion {
     const val SHEET = 420
     const val ENTER = 460
     const val STAGGER = 55
-    const val STAMP = 380
     const val HERO = 700
-    const val GOAL = 600
-    const val RAIL = 700
 }
 
 @OptIn(ExperimentalTextApi::class)
@@ -259,10 +252,6 @@ object ReceiptsFonts {
         Font(R.font.space_mono_bold, FontWeight.Bold),
     )
 
-    val bricolageGrotesque = display
-    val outfit = body
-    val spaceMono = mono
-    val archivo = display
     val instrumentSans = body
     val splineSansMono = mono
 }

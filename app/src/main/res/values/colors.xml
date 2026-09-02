@@ -2,15 +2,18 @@
 <resources>
     <color name="app_launch_paper">#E9E7DE</color>
     <color name="receipt_paper">#E9E7DE</color>
-    <color name="receipt_paper_raised">#E2DFD4</color>
-    <color name="receipt_sunk">#DCD8CB</color>
     <color name="receipt_ink">#15181A</color>
-    <color name="receipt_ink_soft">#3C4241</color>
-    <color name="receipt_fade">#5F645C</color>
-    <color name="receipt_rule">#CFCCBF</color>
-    <color name="receipt_rule_hard">#B3AF9F</color>
     <color name="receipt_ultramarine">#2B3FD9</color>
-    <color name="receipt_chrome">#F5C518</color>
     <color name="receipt_chilli">#B92D19</color>
-    <color name="receipt_chilli_on">#FFFFFF</color>
+    <!-- Widget picker preview only: the live widget re-tints every surface at runtime from the
+         user's in-app theme (see BudgetWidgetProvider.widgetPalette). Mirrors ColorfulPalette. -->
+    <color name="widget_preview_paper">#FFFDF6</color>
+    <color name="widget_preview_ink">#14121F</color>
+    <color name="widget_preview_fade">#6E6880</color>
+    <color name="widget_preview_hero">#FFD23F</color>
+    <color name="widget_preview_hero_on">#14121F</color>
+    <color name="widget_preview_track">#D2AC36</color>
+    <color name="widget_preview_tile">#DFF7F9</color>
+    <color name="widget_preview_chilli">#FF3D7F</color>
+    <color name="widget_preview_chilli_on">#FFF7EC</color>
 </resources>

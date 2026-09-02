@@ -6,7 +6,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -67,6 +66,7 @@ fun LedgerScreen(
             .entries.sortedByDescending { it.value }
             .map { it.key }
     }
+    val hasExcluded = remember(transactions) { transactions.any { it.status == TransactionStatus.EXCLUDED } }
     val items = remember(transactions, budget, query, filterId) { ledgerItems(transactions, budget, query, filterId) }
     val listAppearedAt = remember(query, filterId) { android.os.SystemClock.uptimeMillis() }
 
@@ -74,7 +74,7 @@ fun LedgerScreen(
         Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 22.dp)) {
             Text("History", color = receiptsColors.ink, style = ReceiptsType.title)
             ReceiptTextField(query, { query = it }, "Search receipts", Modifier.padding(top = 13.dp))
-            LedgerFilterRow(availableCategories, filterId, { filterId = it }, Modifier.padding(top = 9.dp))
+            LedgerFilterRow(availableCategories, hasExcluded, filterId, { filterId = it }, Modifier.padding(top = 9.dp))
         }
         LazyColumn(
             Modifier.fillMaxWidth().weight(1f),
@@ -105,8 +105,9 @@ fun LedgerScreen(
                 }
             }
             item("foot") {
+                val rowCount = items.count { it is LedgerItem.Row }
                 Text(
-                    "${items.count { it is LedgerItem.Row }} receipts stored".uppercase(),
+                    if (filterId == ExcludedFilterId) "$rowCount excluded · not counted anywhere".uppercase() else "$rowCount receipts stored".uppercase(),
                     color = receiptsColors.fade,
                     style = ReceiptsType.label.copy(letterSpacing = 1.2.sp),
                     modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 4.dp),
@@ -119,13 +120,22 @@ fun LedgerScreen(
 }
 
 @Composable
-private fun LedgerFilterRow(categories: List<String>, selected: String?, onSelected: (String?) -> Unit, modifier: Modifier = Modifier) {
+private fun LedgerFilterRow(
+    categories: List<String>,
+    hasExcluded: Boolean,
+    selected: String?,
+    onSelected: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         ReceiptPill("All", selected = selected == null, onClick = { onSelected(null) })
         categories.forEach { categoryId ->
             ReceiptPill(categoryName(categoryId), selected = selected == categoryId, onClick = { onSelected(categoryId) })
         }
         ReceiptPill("Money in", selected = selected == MoneyInFilterId, onClick = { onSelected(MoneyInFilterId) })
+        // Excluded receipts are always in the list, but they're easy to lose among everything else —
+        // this is the only way to pull the ignored pile up on its own and un-ignore something.
+        if (hasExcluded) ReceiptPill("Excluded", selected = selected == ExcludedFilterId, onClick = { onSelected(ExcludedFilterId) })
     }
 }
 
@@ -200,7 +210,7 @@ private fun LedgerTransactionRow(
                     textDecoration = if (transaction.status == TransactionStatus.EXCLUDED) TextDecoration.LineThrough else null,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (transaction.committed) ReceiptCommittedTag()
+                if (transaction.committed) ReceiptSkipTag()
             }
             val state = when (transaction.status) {
                 TransactionStatus.EXCLUDED -> " · Excluded"
@@ -241,7 +251,10 @@ private fun ledgerItems(transactions: List<Transaction>, budget: Budget, query: 
     return visible.groupBy { receiptDate(it.occurredAt) }
         .toSortedMap(compareByDescending { it })
         .flatMap { (date, rows) ->
-            val netTotal = rows.filter { it.status in IncludedTotalStatuses }.sumOf {
+            // Excluded receipts never count towards a day's total — except when they're the only
+            // thing on screen, where a column of blank headers would just look broken.
+            val counted = if (filterId == ExcludedFilterId) rows else rows.filter { it.status in IncludedTotalStatuses }
+            val netTotal = counted.sumOf {
                 when {
                     it.direction == Direction.CREDIT -> -it.amountMinor
                     it.categoryId == "investment" && !budget.countInvestmentsAsSpending -> 0L
@@ -263,10 +276,12 @@ private fun ledgerDescription(transaction: Transaction): String = buildString {
 }
 
 private const val MoneyInFilterId = "__money_in__"
+private const val ExcludedFilterId = "__excluded__"
 
 private fun matchesFilter(transaction: Transaction, filterId: String?): Boolean = when (filterId) {
     null -> true
     MoneyInFilterId -> transaction.direction == Direction.CREDIT
+    ExcludedFilterId -> transaction.status == TransactionStatus.EXCLUDED
     else -> transaction.categoryId == filterId
 }
 

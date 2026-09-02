@@ -36,20 +36,24 @@ internal class CategoryLimitNotifier(
         val allSent = preferences.getStringSet("category_limit_alerts", emptySet()).orEmpty()
         val sent = allSent.filterTo(mutableSetOf()) { it.startsWith(periodPrefix) }
         val snapshot = dashboard(transactions, budget)
-        val percent = snapshot.spentMinor * 100 / budget.amountMinor
+        // Declared obligations are off the top of the budget, so the alert fires against what was
+        // actually left to spend — otherwise a big rent line would never trip the 80% warning.
+        val ceiling = snapshot.spendableMinor
+        if (ceiling <= 0) return
+        val percent = snapshot.spentMinor * 100 / ceiling
         var changed = sent.size != allSent.size
 
         val exceededKey = "${periodPrefix}100"
         val warningKey = "${periodPrefix}80"
         when {
             percent >= 100 && exceededKey !in sent -> {
-                showBudget(periodLabel(snapshot.range), snapshot.spentMinor, budget.amountMinor, true, exceededKey.hashCode())
+                showBudget(periodLabel(snapshot.range), snapshot.spentMinor, ceiling, true, exceededKey.hashCode())
                 sent += warningKey
                 sent += exceededKey
                 changed = true
             }
             percent >= 80 && warningKey !in sent -> {
-                showBudget(periodLabel(snapshot.range), snapshot.spentMinor, budget.amountMinor, false, warningKey.hashCode())
+                showBudget(periodLabel(snapshot.range), snapshot.spentMinor, ceiling, false, warningKey.hashCode())
                 sent += warningKey
                 changed = true
             }

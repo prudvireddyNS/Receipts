@@ -141,11 +141,6 @@ class TrackRepository(private val context: Context) {
         BudgetWidgetProvider.updateAll(context)
     }
 
-    fun invalidateCurrentPeriodBudgetConfirmation() {
-        preferences.edit().remove("budget_confirmed_key").apply()
-        BudgetWidgetProvider.updateAll(context)
-    }
-
     fun rerunOnboarding() {
         preferences.edit().putBoolean("onboarding_complete", false).apply()
     }
@@ -235,22 +230,6 @@ class TrackRepository(private val context: Context) {
     @Synchronized
     fun clearAll() {
         database.clear()
-        refresh()
-    }
-
-    @Synchronized
-    fun addSampleData() {
-        if (_transactions.value.any { it.source == TransactionSource.SAMPLE }) return
-        val now = ZonedDateTime.now()
-        val samples = listOf(
-            sample(now.minusHours(2), 420_00, "Swiggy", "food"),
-            sample(now.minusHours(5), 100_00, "Metro card", "transport"),
-            sample(now.minusDays(1).minusHours(1), 2_199_00, "Amazon", "shopping"),
-            sample(now.minusDays(2), 640_00, "Zomato", null, TransactionStatus.NEEDS_REVIEW),
-            sample(now.minusDays(4), 12_000_00, "Rent", "rent"),
-            sample(now.minusDays(7), 649_00, "Netflix", "subscription").copy(recurring = true),
-        )
-        samples.forEach(database::insert)
         refresh()
     }
 

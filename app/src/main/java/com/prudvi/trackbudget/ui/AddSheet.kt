@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
@@ -208,7 +207,7 @@ fun AddSheet(
         if (direction == Direction.DEBIT) {
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Skip in daily total",
+                    "Skip in daily pace",
                     Modifier.weight(1f),
                     color = receiptsColors.inkSoft,
                     style = ReceiptsType.bodyStrong.copy(fontSize = 12.sp),
@@ -230,7 +229,8 @@ fun AddSheet(
         ReceiptButton(
             text = "Save",
             onClick = ::save,
-            enabled = true,
+            // save() bails on a zero amount, so leaving the button lit just made it look broken.
+            enabled = amountMinor > 0L,
             modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
             style = ReceiptButtonStyle.CHROME,
             radius = ReceiptsRadius.card,

@@ -142,7 +142,7 @@ fun TransactionEditorOverlay(
                         }
                         if (direction == Direction.DEBIT) {
                             Row(Modifier.fillMaxWidth().padding(top = ReceiptsSpace.x1), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Skip in daily total", Modifier.weight(1f), color = receiptsColors.ink, style = ReceiptsType.bodyStrong.copy(fontSize = 12.sp))
+                                Text("Skip in daily pace", Modifier.weight(1f), color = receiptsColors.ink, style = ReceiptsType.bodyStrong.copy(fontSize = 12.sp))
                                 ReceiptCheckbox(committed) { committed = it }
                             }
                         }
@@ -182,8 +182,8 @@ fun TransactionEditorOverlay(
                 }
             }
             item {
+                val excluded = transaction.status == TransactionStatus.EXCLUDED
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ReceiptsSpace.x2)) {
-                    val excluded = transaction.status == TransactionStatus.EXCLUDED
                     ReceiptButton(
                         if (excluded) "Include" else "Exclude",
                         onClick = { save(if (excluded) TransactionStatus.CONFIRMED else TransactionStatus.EXCLUDED) },
@@ -192,7 +192,15 @@ fun TransactionEditorOverlay(
                     )
                     ReceiptButton("Delete", { confirmDelete = true }, Modifier.weight(1f), style = ReceiptButtonStyle.CHILLI)
                 }
-                ReceiptButton("Save", { save(TransactionStatus.CONFIRMED) }, Modifier.fillMaxWidth().padding(top = ReceiptsSpace.x2), enabled = amountMinor > 0L)
+                // Saving an edit resolves a receipt that needed review, but it must not quietly
+                // un-exclude one — excluding is a deliberate choice, and the Include button above
+                // is the only thing that should undo it.
+                ReceiptButton(
+                    "Save",
+                    { save(if (excluded) TransactionStatus.EXCLUDED else TransactionStatus.CONFIRMED) },
+                    Modifier.fillMaxWidth().padding(top = ReceiptsSpace.x2),
+                    enabled = amountMinor > 0L,
+                )
             }
         }
         if (confirmDelete) ConfirmDelete(onCancel = { confirmDelete = false }, onDelete = { onDelete(transaction.id) })

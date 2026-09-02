@@ -248,11 +248,6 @@ class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.
     }
 
     @Synchronized
-    fun deleteGoal(id: String) {
-        writableDatabase.delete("goals", "id = ?", arrayOf(id))
-    }
-
-    @Synchronized
     fun earnedStamps(): List<EarnedStamp> = readableDatabase.query("stamps", null, null, null, null, null, "earned_at ASC").use { cursor ->
         buildList {
             while (cursor.moveToNext()) {
@@ -273,11 +268,6 @@ class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.
         writableDatabase.insertWithOnConflict("stamps", null, stamp.values(), SQLiteDatabase.CONFLICT_IGNORE) != -1L
 
     @Synchronized
-    fun markStampSeen(id: String) {
-        writableDatabase.update("stamps", ContentValues().apply { put("seen", 1) }, "id = ?", arrayOf(id))
-    }
-
-    @Synchronized
     fun dismissedDropRules(): List<DismissedDropRule> = readableDatabase.query("dismissed_drops", null, null, null, null, null, "dismissed_at DESC").use { cursor ->
         buildList {
             while (cursor.moveToNext()) {
@@ -294,11 +284,6 @@ class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.
     @Synchronized
     fun upsertDismissedDropRule(rule: DismissedDropRule) {
         writableDatabase.insertWithOnConflict("dismissed_drops", null, rule.values(), SQLiteDatabase.CONFLICT_REPLACE)
-    }
-
-    @Synchronized
-    fun deleteDismissedDropRule(ruleKey: String) {
-        writableDatabase.delete("dismissed_drops", "rule_key = ?", arrayOf(ruleKey))
     }
 
     @Synchronized

@@ -66,8 +66,6 @@ import com.prudvi.trackbudget.model.Transaction
 import com.prudvi.trackbudget.model.TransactionStatus
 import com.prudvi.trackbudget.model.dashboard
 import com.prudvi.trackbudget.model.periodLabel
-import java.time.DayOfWeek
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -167,7 +165,10 @@ private fun HomeHero(
     modifier: Modifier = Modifier,
 ) {
     val hasBudget = budget.amountMinor > 0L
-    val progress = if (hasBudget) snapshot.spentMinor.toFloat() / budget.amountMinor.coerceAtLeast(1L) else 0f
+    // Declared obligations are already off the top (see dashboard()), so every ratio here is read
+    // against what's actually left to spend, not the headline budget.
+    val spendable = snapshot.spendableMinor
+    val progress = if (hasBudget) snapshot.spentMinor.toFloat() / spendable.coerceAtLeast(1L) else 0f
     val overPace = hasBudget && progress > snapshot.dayOfPeriod.toFloat() / snapshot.daysInPeriod.coerceAtLeast(1)
     // Only the card's ground fades between modes; the numbers themselves must track the finger exactly,
     // so the readout uses the un-animated hero amount rather than the counting-up one.
@@ -217,7 +218,7 @@ private fun HomeHero(
             ReceiptPaceRail(
                 progress = progress,
                 fill = if (overPace) receiptsColors.pink else receiptsColors.mint,
-                description = "Budget ${receiptMoney(snapshot.spentMinor)} of ${receiptMoney(budget.amountMinor)}",
+                description = "Budget ${receiptMoney(snapshot.spentMinor)} of ${receiptMoney(spendable)}",
             )
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Row(
@@ -228,10 +229,23 @@ private fun HomeHero(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("BUDGET", color = receiptsColors.fade, style = ReceiptsType.label.copy(fontSize = 9.sp, letterSpacing = 1.sp))
-                    Text(receiptMoney(budget.amountMinor), color = receiptsColors.ink, style = ReceiptsType.amount)
+                    Text(if (snapshot.obligationsMinor > 0L) "TO SPEND" else "BUDGET", color = receiptsColors.fade, style = ReceiptsType.label.copy(fontSize = 9.sp, letterSpacing = 1.sp))
+                    Text(receiptMoney(spendable), color = receiptsColors.ink, style = ReceiptsType.amount)
                 }
                 Text("${(snapshot.daysInPeriod - snapshot.dayOfPeriod + 1).coerceAtLeast(1)} days left", color = receiptsColors.chromeOn, style = ReceiptsType.bodyStrong.copy(fontSize = 11.5.sp))
+            }
+            if (snapshot.obligationsMinor > 0L) {
+                Text(
+                    // "obligations", not "fixed": the FIXED tag on a receipt row means something
+                    // different (a payment kept out of daily pacing), and one word for both reads
+                    // as if the two numbers were related.
+                    "${receiptMoney(budget.amountMinor)} budget − ${receiptMoney(snapshot.obligationsMinor)} obligations",
+                    Modifier.padding(top = 7.dp),
+                    color = receiptsColors.chromeOn,
+                    style = ReceiptsType.meta.copy(fontSize = 10.5.sp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         } else {
             Row(
@@ -287,10 +301,7 @@ private fun HomeStats(snapshot: DashboardSnapshot, budget: Budget, transactions:
     val hasBudget = budget.amountMinor > 0L
     val daysLeft = (snapshot.daysInPeriod - snapshot.dayOfPeriod + 1).coerceAtLeast(1)
     val leftPerDay = if (hasBudget && daysLeft > 0) snapshot.remainingMinor.coerceAtLeast(0) / daysLeft else snapshot.spentMinor / snapshot.dayOfPeriod.coerceAtLeast(1)
-    // Committed spend (rent, a lump transfer) is already fully paid — project only the flexible
-    // share forward, then add committed back as a lump sum instead of smearing it across the period.
-    val flexibleSpent = (snapshot.spentMinor - snapshot.committedMinor).coerceAtLeast(0)
-    val headingFor = if (hasBudget) flexibleSpent / snapshot.dayOfPeriod.coerceAtLeast(1) * snapshot.daysInPeriod + snapshot.committedMinor else snapshot.dailyTotals.maxOfOrNull { abs(it.value) } ?: 0L
+    val headingFor = if (hasBudget) burnUpProjection(snapshot) else snapshot.dailyTotals.maxOfOrNull { abs(it.value) } ?: 0L
     val elapsed = snapshot.dayOfPeriod.coerceAtLeast(1)
     // `dailyTotals` leaves committed spend out (see dashboard()), so the day rent went out looks
     // empty there. Count the days off the transactions instead, with the same inclusion rule
@@ -309,7 +320,7 @@ private fun HomeStats(snapshot: DashboardSnapshot, budget: Budget, transactions:
         val cyanLabel = if (receiptsColors.monochrome) receiptsColors.ink else androidx.compose.ui.graphics.Color(0xFF0E7C86)
         StatTile(if (hasBudget) "Left per day" else "Daily average", receiptMoney(leftPerDay), receiptsColors.cyan, cyanLabel, Modifier.weight(1f))
         StatTile("Quiet days", "$quietDays of $elapsed", receiptsColors.warm, receiptsColors.ink, Modifier.weight(1f))
-        val over = hasBudget && headingFor > budget.amountMinor
+        val over = hasBudget && headingFor > snapshot.spendableMinor
         StatTile(if (hasBudget) "Heading for" else "Biggest day", receiptCompactMoney(headingFor), if (over) receiptsColors.pinkTint else receiptsColors.mintTint, if (over) receiptsColors.pink else receiptsColors.ink, Modifier.weight(1f))
     }
 }
@@ -328,8 +339,68 @@ private fun StatTile(label: String, value: String, background: androidx.compose.
     }
 }
 
+/**
+ * Where the period lands if the rest of it looks like a typical day so far.
+ *
+ * Deliberately **not** a mean. A mean multiplies one unusual day across the whole period: on day 6
+ * of a 31-day month a single ₹5,300 purchase — 58% of everything spent — dragged this from ₹24k to
+ * ₹47k, which told the user nothing except that they had bought a bike tyre. The median day is
+ * robust to exactly that, and a genuinely heavy month still moves it because the median itself
+ * rises.
+ *
+ * Committed spend is already excluded from [DashboardSnapshot.dailyTotals], so a rent debit never
+ * inflates the typical day; it is counted once inside `spentMinor`, which the projection starts
+ * from. Starting from money actually spent also means the figure can never fall below it.
+ */
+internal fun burnUpProjection(snapshot: DashboardSnapshot): Long {
+    val days = snapshot.daysInPeriod.coerceAtLeast(1)
+    val elapsed = snapshot.dayOfPeriod.coerceIn(1, days)
+    // Every elapsed day, including the ones with no spending at all — dropping quiet days would
+    // quietly bias the typical day upward.
+    val daily = (0 until elapsed).map { offset ->
+        (snapshot.dailyTotals[snapshot.range.start.plusDays(offset.toLong())] ?: 0L).coerceAtLeast(0L)
+    }.sorted()
+    val typicalDay = if (daily.size % 2 == 0) {
+        (daily[daily.size / 2 - 1] + daily[daily.size / 2]) / 2
+    } else {
+        daily[daily.size / 2]
+    }
+    return snapshot.spentMinor + typicalDay * (days - elapsed)
+}
+
 /** One day of the burn-up series: what the curve is worth there, and what that day alone cost. */
-private data class BurnUpScrub(val date: LocalDate, val cumulativeMinor: Long, val dayMinor: Long)
+internal data class BurnUpScrub(val date: LocalDate, val cumulativeMinor: Long, val dayMinor: Long)
+
+/**
+ * The burn-up curve, one point per elapsed day.
+ *
+ * [DashboardSnapshot.dailyTotals] deliberately leaves committed spend out so one lump payment can't
+ * crater day-by-day pacing. A burn-up is a record of what happened rather than a pacing signal, so
+ * it adds those days back **on the day they actually landed** — a rent debit paid on the 20th
+ * belongs on the 20th, not smeared onto day one.
+ *
+ * The head of the curve must always equal [DashboardSnapshot.spentMinor], because the hero prints
+ * that same number directly above it. A receipt dated later in the period (the editor's date
+ * stepper is unbounded) would otherwise count in `spentMinor` but fall on a day the curve has not
+ * reached, so it rides on today's point instead of vanishing.
+ */
+internal fun burnUpSeries(snapshot: DashboardSnapshot): List<BurnUpScrub> {
+    val days = snapshot.daysInPeriod.coerceAtLeast(1)
+    val elapsed = snapshot.dayOfPeriod.coerceIn(1, days)
+    val lastDrawn = snapshot.range.start.plusDays((elapsed - 1).toLong())
+    fun totalOn(date: LocalDate): Long =
+        (snapshot.dailyTotals[date] ?: 0L) + (snapshot.committedDailyTotals[date] ?: 0L)
+    val future = (snapshot.dailyTotals.keys + snapshot.committedDailyTotals.keys)
+        .filter { it > lastDrawn }
+        .sumOf(::totalOn)
+    var running = 0L
+    return (0 until elapsed).map { offset ->
+        val date = snapshot.range.start.plusDays(offset.toLong())
+        val own = totalOn(date) + if (offset == elapsed - 1) future else 0L
+        running += own
+        BurnUpScrub(date, running, own)
+    }
+}
 
 private val ScrubDateFormat = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH)
 
@@ -346,25 +417,14 @@ private fun BurnUpChart(
     val dayOfPeriod = snapshot.dayOfPeriod.coerceIn(1, days)
     val hasBudget = budget.amountMinor > 0L
 
-    // `dailyTotals` leaves committed spend (rent, a lump transfer) out so one big payment doesn't
-    // crater day-by-day pacing — see dashboard(). A burn-up is read against the whole budget, so the
-    // committed block rides along as a day-one baseline: the curve still lands on `spentMinor` today.
-    // One series, used both to draw the curve and to answer a scrub, so the readout can never disagree
-    // with the point the finger is on.
-    val series = remember(snapshot) {
-        var running = snapshot.committedMinor
-        (0 until dayOfPeriod).map { offset ->
-            val date = snapshot.range.start.plusDays(offset.toLong())
-            val own = snapshot.dailyTotals[date] ?: 0L
-            running += own
-            BurnUpScrub(date, running, own)
-        }
-    }
+    // One series, used both to draw the curve and to answer a scrub, so the readout can never
+    // disagree with the point the finger is on.
+    val series = remember(snapshot) { burnUpSeries(snapshot) }
     val spent = series.last().cumulativeMinor
     // Same projection the "Heading for" tile shows: only the flexible share is extrapolated.
-    val flexibleSpent = (snapshot.spentMinor - snapshot.committedMinor).coerceAtLeast(0)
-    val projected = flexibleSpent / dayOfPeriod * days + snapshot.committedMinor
-    val ceiling = budget.amountMinor
+    // Same figure the "Heading for" tile shows — one definition, so the two can never drift apart.
+    val projected = burnUpProjection(snapshot)
+    val ceiling = snapshot.spendableMinor
     val topValue = maxOf(ceiling, projected, spent).coerceAtLeast(1L) * 1.14
     val overPace = hasBudget && spent > ceiling.toDouble() / days * dayOfPeriod
     val overBudget = hasBudget && projected > ceiling
@@ -413,12 +473,12 @@ private fun BurnUpChart(
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { report.value(null) } }
 
     val description = "Burn-up. ${receiptMoney(spent)} spent by day $dayOfPeriod of $days" +
-        (if (hasBudget) ", budget ${receiptMoney(ceiling)}" else "") +
+        (if (hasBudget) ", ${if (snapshot.obligationsMinor > 0L) "spendable" else "budget"} ${receiptMoney(ceiling)}" else "") +
         ", heading for ${receiptMoney(projected)}"
 
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
-            ReceiptLabel(if (hasBudget) "Burn-up vs budget" else "Burn-up", Modifier.weight(1f))
+            ReceiptLabel(if (!hasBudget) "Burn-up" else if (snapshot.obligationsMinor > 0L) "Burn-up vs spendable" else "Burn-up vs budget", Modifier.weight(1f))
             Text(
                 (if (hasBudget) "heading for " else "on this pace ") + receiptCompactMoney(projected),
                 color = if (overBudget) colors.pink else colors.fade,
@@ -447,12 +507,16 @@ private fun BurnUpChart(
                             burnUpDayAt(x, padLeft, size.width - padLeft - padRight, days, series.size)
 
                         awaitEachGesture {
+                          try {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             var day = dayAt(down.position.x)
+                            // Only the on-chart rule moves before touch slop. Swapping the hero into
+                            // readout mode on a bare finger-down made it strobe every time the list
+                            // was flung past the chart.
                             scrubDay = day
-                            report.value(series[day - 1])
                             val past = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
                             if (past != null) {
+                                report.value(series[day - 1])
                                 fun select(x: Float) {
                                     val next = dayAt(x)
                                     if (next == day) return
@@ -467,10 +531,14 @@ private fun BurnUpChart(
                                     change.consume()
                                 }
                             }
-                            // Covers all three endings: a plain lift, a cancel, and the list stealing the
-                            // gesture (which returns null slop). The hero can never stick in readout mode.
+                          } finally {
+                            // Covers all four endings: a plain lift, a cancel, the list stealing the
+                            // gesture (which returns null slop), and this whole handler being torn
+                            // down mid-drag because an incoming SMS rebuilt `series`. Without the
+                            // `finally` that last one strands the hero in readout mode on a stale day.
                             scrubDay = null
                             report.value(null)
+                          }
                         }
                     }
                     .semantics { contentDescription = description },
@@ -519,7 +587,10 @@ private fun BurnUpChart(
 
                 // Even pace: the diagonal that lands exactly on budget on the last day. With no budget
                 // set it becomes the chord of your own average so far, so the curve still has a datum.
-                val paceEnd = if (hasBudget) Offset(xOf(days), yOf(ceiling)) else points.last()
+                // With obligations at or above the budget there is nothing left to pace against, so
+                // the diagonal would lie flat on the axis under the ceiling rule. Track the curve
+                // instead of drawing two strokes on the baseline.
+                val paceEnd = if (hasBudget && ceiling > 0L) Offset(xOf(days), yOf(ceiling)) else points.last()
                 val paceStart = Offset(xOf(1), baseY)
                 val paceTip = if (hasBudget) paceEnd else Offset(lerp(paceStart.x, paceEnd.x, lineFraction), lerp(paceStart.y, paceEnd.y, lineFraction))
                 drawLine(
@@ -589,7 +660,7 @@ private fun BurnUpChart(
                 }
 
                 // Labels last, each clamped inside the canvas so nothing can clip.
-                val ceilingLabel = if (hasBudget) measurer.measure("BUDGET ${receiptMoney(ceiling)}", ceilingStyle) else null
+                val ceilingLabel = if (hasBudget) measurer.measure("${if (snapshot.obligationsMinor > 0L) "TO SPEND" else "BUDGET"} ${receiptMoney(ceiling)}", ceilingStyle) else null
                 val projectionLabel = measurer.measure(receiptCompactMoney(projected), projectionStyle)
                 val projectionLabelY = (projectionEnd.y - projectionLabel.size.height - gap)
                     .coerceIn(0f, size.height - projectionLabel.size.height)
@@ -619,12 +690,17 @@ private fun BurnUpChart(
                     )
                 }
                 ticks.forEach { day ->
-                    val label = measurer.measure(day.toString(), tickStyle)
+                    // Day-of-month, not day-of-period: with a resetDay of 28 the period runs
+                    // 28 Aug – 27 Sep, so an axis reading "1 11 21 31" names dates three days out
+                    // from what the scrub readout says when you touch the same spot.
+                    val label = measurer.measure(snapshot.range.start.plusDays((day - 1).toLong()).dayOfMonth.toString(), tickStyle)
                     val x = (xOf(day) - label.size.width / 2f).coerceIn(0f, (size.width - label.size.width).coerceAtLeast(0f))
                     drawText(label, topLeft = Offset(x, baseY + gap))
                 }
             }
-            Spacer(Modifier.fillMaxWidth().height(11.dp).receiptPerforation(colors.ink))
+            // Knocked back: at full alpha this receipt-motif rule sits directly above a legend whose
+            // "even pace" key is itself a dashed ink line, and reads as an unlabelled sixth series.
+            Spacer(Modifier.fillMaxWidth().height(11.dp).receiptPerforation(colors.ink.copy(alpha = 0.35f)))
             Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(13.dp), verticalAlignment = Alignment.CenterVertically) {
                 BurnUpKey("you", colors.ink, 3.dp, null)
                 BurnUpKey(if (hasBudget) "even pace" else "your average", colors.ink.copy(alpha = 0.55f), 1.8.dp, listOf(5.dp, 4.5.dp))

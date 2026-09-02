@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.prudvi.trackbudget.model.Budget
 import com.prudvi.trackbudget.model.budgetRange
+import com.prudvi.trackbudget.model.obligationsMinor
 
 @Composable
 fun BudgetSheet(
@@ -65,6 +66,11 @@ fun BudgetSheet(
         categoryLimits = emptyMap(),
     )
     val range = budgetRange(draft)
+    // Declared obligations come off the top of the budget, so the per-day figure has to be read
+    // against what's actually left — otherwise this sheet promises a daily allowance the rest of
+    // the app will never agree with.
+    val obligationsMinor = draft.obligationsMinor(range)
+    val spendableMinor = (amountMinor - obligationsMinor).coerceAtLeast(0L)
 
     Box(modifier.fillMaxSize().background(receiptsColors.paper)) {
         LazyColumn(
@@ -120,7 +126,14 @@ fun BudgetSheet(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 modifier = Modifier.semantics { contentDescription = "Budget amount" },
                             )
-                            Text("${receiptMoney(amountMinor / range.days)} per day", color = receiptsColors.fade, style = ReceiptsType.meta)
+                            if (obligationsMinor > 0L) {
+                                Text(
+                                    "− ${receiptMoney(obligationsMinor)} fixed obligations = ${receiptMoney(spendableMinor)} to spend",
+                                    color = receiptsColors.ink,
+                                    style = ReceiptsType.meta,
+                                )
+                            }
+                            Text("${receiptMoney(spendableMinor / range.days)} per day", color = receiptsColors.fade, style = ReceiptsType.meta)
                         } else {
                             Text("Home will show spending without a budget rail.", color = receiptsColors.fade, style = ReceiptsType.meta)
                         }

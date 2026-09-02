@@ -75,6 +75,16 @@ fun CurrentRecapScreen(
                 }
                 Text(recap.title, color = receiptsColors.ultramarineOn, style = ReceiptsType.display, modifier = Modifier.padding(top = 14.dp))
                 Text(if (recap.spentMinor < 0L) "−${receiptMoney(abs(recap.spentMinor))}" else receiptMoney(recap.spentMinor), color = receiptsColors.ultramarineOn, style = ReceiptsType.recapHero, modifier = Modifier.padding(top = 8.dp), maxLines = 1)
+                if (recap.obligationsMinor > 0L) {
+                    // The hero is what actually left the account. Fixed obligations were taken off
+                    // the budget instead, so name them here rather than letting the gap go unexplained.
+                    Text(
+                        "plus ${receiptMoney(recap.obligationsMinor)} fixed, set aside off your budget",
+                        color = receiptsColors.ultramarineOn,
+                        style = ReceiptsType.meta.copy(fontSize = 11.sp),
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
                 Row(
                     Modifier.padding(top = 12.dp)
                         .clip(RoundedCornerShape(ReceiptsRadius.pill))
@@ -214,6 +224,7 @@ private data class RecapMerchant(val rank: Int, val name: String, val count: Str
 private data class RecapData(
     val title: String,
     val spentMinor: Long,
+    val obligationsMinor: Long,
     val compareArrow: String,
     val comparison: String,
     val categories: List<RecapCategory>,
@@ -258,7 +269,7 @@ private fun buildRecap(transactions: List<Transaction>, budget: Budget): RecapDa
         .sortedByDescending { it.third }
         .mapIndexed { index, (merchant, count, amount) -> RecapMerchant(index + 1, merchant, "$count ${if (count == 1) "order" else "orders"}", amount) }
     val biggest = snapshot.dailyTotals.filterValues { it > 0L }.maxByOrNull { it.value }
-    val pace = if (budget.amountMinor > 0L) budget.amountMinor / snapshot.daysInPeriod.coerceAtLeast(1) else snapshot.spentMinor / elapsedDays
+    val pace = if (snapshot.spendableMinor > 0L) snapshot.spendableMinor / snapshot.daysInPeriod.coerceAtLeast(1) else snapshot.spentMinor / elapsedDays
     val quietCount = (0 until elapsedDays).count { offset ->
         val day = snapshot.range.start.plusDays(offset.toLong())
         (snapshot.dailyTotals[day] ?: 0L) < pace
@@ -267,6 +278,7 @@ private fun buildRecap(transactions: List<Transaction>, budget: Budget): RecapDa
     return RecapData(
         title = title,
         spentMinor = snapshot.spentMinor,
+        obligationsMinor = snapshot.obligationsMinor,
         compareArrow = if (delta >= 0) "↑" else "↓",
         comparison = when {
             previousNet == 0L -> "No equal stretch yet"

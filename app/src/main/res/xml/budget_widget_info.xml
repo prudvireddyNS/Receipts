@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Sized around the content it actually holds: a hero plate (~82dp) over a 46dp tile strip, plus
+     padding and margins. That lands just under a 4x2 cell, which is the default placement. The
+     hero absorbs extra height when resized taller, so there is no separate layout per size. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/widget_description"
-    android:initialLayout="@layout/widget_budget_medium"
-    android:minWidth="140dp"
-    android:minHeight="100dp"
-    android:minResizeWidth="140dp"
-    android:minResizeHeight="90dp"
-    android:targetCellWidth="3"
+    android:initialLayout="@layout/widget_budget"
+    android:minWidth="250dp"
+    android:minHeight="130dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="120dp"
+    android:targetCellWidth="4"
     android:targetCellHeight="2"
-    android:previewLayout="@layout/widget_budget_large"
+    android:maxResizeWidth="480dp"
+    android:maxResizeHeight="190dp"
+    android:previewLayout="@layout/widget_budget"
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="1800000"
     android:widgetCategory="home_screen" />

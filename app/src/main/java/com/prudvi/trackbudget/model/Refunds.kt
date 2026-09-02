@@ -1,6 +1,5 @@
 package com.prudvi.trackbudget.model
 
-import kotlin.math.abs
 
 fun findRefundCandidate(transactions: List<Transaction>, credit: Transaction): Transaction? {
     if (credit.direction != Direction.CREDIT || credit.amountMinor <= 0) return null

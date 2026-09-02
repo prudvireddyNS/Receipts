@@ -7,7 +7,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,7 +18,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
@@ -32,7 +34,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +51,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -208,15 +210,28 @@ fun ReviewDeck(
                                     if (canResolve(ReviewAction.REFUND)) add(CustomAccessibilityAction("Mark as refund") { settle(ReviewAction.REFUND, widthPx, offsetX); true })
                                 }
                             }
+                            // Horizontal-only: nothing is claimed until the pointer clears touch slop
+                            // *horizontally*, so a vertical drag on the card reaches the surrounding
+                            // scroll container untouched. `detectDragGestures` would swallow it, which
+                            // stranded the card whenever the expanded category grid made the page
+                            // taller than the screen.
                             .pointerInput(top.id, widthPx, amountDigits, selectedCategory, resolvedDirection) {
-                                detectDragGestures(
-                                    onDragStart = {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    val past = awaitHorizontalTouchSlopOrCancellation(down.id) { change, over ->
+                                        change.consume()
                                         dragging = true
-                                        dragX = xAnim.value
+                                        dragX = xAnim.value + over
                                         scope.launch { xAnim.stop() }
-                                    },
-                                    onDragCancel = { settle(null, widthPx, dragX) },
-                                    onDragEnd = {
+                                    } ?: return@awaitEachGesture
+                                    var cancelled = false
+                                    horizontalDrag(past.id) { change ->
+                                        dragX += change.positionChange().x
+                                        change.consume()
+                                    }.also { completed -> cancelled = !completed }
+                                    if (cancelled) {
+                                        settle(null, widthPx, dragX)
+                                    } else {
                                         val threshold = widthPx * 0.32f
                                         val action = when {
                                             dragX > threshold -> ReviewAction.KEEP
@@ -224,12 +239,8 @@ fun ReviewDeck(
                                             else -> null
                                         }
                                         settle(action, widthPx, dragX)
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        dragX += dragAmount.x
-                                    },
-                                )
+                                    }
+                                }
                             },
                     )
                 }
@@ -426,12 +437,6 @@ private fun sanitizeReviewAmount(value: String): String {
     return if ('.' in clean) "$before.$after" else before
 }
 
-private fun reviewLabel(transaction: Transaction): String = when (transaction.status) {
-    TransactionStatus.CATEGORY_REVIEW -> "Check category"
-    TransactionStatus.NEEDS_RESOLUTION -> "Money landed"
-    TransactionStatus.UNPARSEABLE -> "Needs amount"
-    else -> "Needs review"
-}
 private fun defaultDirection(transaction: Transaction): Direction = if (transaction.status == TransactionStatus.NEEDS_RESOLUTION) Direction.CREDIT else transaction.direction
 private fun defaultCategoryId(transaction: Transaction): String = transaction.categoryId ?: if (defaultDirection(transaction) == Direction.CREDIT) "income" else "misc"
 private fun reviewCategoryOptions(direction: Direction, showAll: Boolean): List<Category> {

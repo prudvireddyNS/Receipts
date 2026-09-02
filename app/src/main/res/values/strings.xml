@@ -1,8 +1,12 @@
 <resources>
     <string name="app_name">Receipts</string>
-    <string name="widget_kicker_placeholder">SPENT THIS MONTH · 0 LEFT</string>
-    <string name="widget_amount_placeholder">₹0</string>
-    <string name="widget_support_placeholder">Nothing yet</string>
-    <string name="widget_review_placeholder">1 receipt needs you</string>
-    <string name="widget_description">Current spending, budget progress, and receipts needing review.</string>
+    <!-- Widget placeholders: every one of these is replaced at runtime; they exist so the
+         widget-picker preview reads as a real card. -->
+    <string name="widget_kicker_placeholder">SPENT THIS MONTH</string>
+    <string name="widget_period_placeholder">DAY —</string>
+    <string name="widget_amount_placeholder">—</string>
+    <string name="widget_support_placeholder">—</string>
+    <string name="widget_tile_label_placeholder">LEFT</string>
+    <string name="widget_tile_value_placeholder">—</string>
+    <string name="widget_description">Spend, budget pace, and what is left to spend today.</string>
 </resources>

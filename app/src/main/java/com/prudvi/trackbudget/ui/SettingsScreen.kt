@@ -166,7 +166,7 @@ fun SettingsScreen(
                     ReceiptDivider(Modifier.padding(top = 13.dp, bottom = 11.dp))
                     Text("Fixed obligations", color = receiptsColors.ink, style = ReceiptsType.bodyStrong.copy(fontSize = 12.sp))
                     Text(
-                        "Rent, family, investments — money that's already spoken for before you spend.",
+                        "Rent, family, investments — taken off your budget before the period starts, so they never show up as spending.",
                         color = receiptsColors.fade,
                         style = ReceiptsType.meta,
                         modifier = Modifier.padding(top = 3.dp, bottom = 9.dp),
@@ -215,7 +215,11 @@ fun SettingsScreen(
                     }
                     val activeObligationsMinor = budget.commitments.filter { it.enabled }.sumOf { it.monthlyAmountMinor }
                     Text(
-                        if (activeObligationsMinor > 0) "${receiptMoney(activeObligationsMinor)}/month added to spending automatically, every period." else "Nothing added yet.",
+                        when {
+                            activeObligationsMinor <= 0L -> "Nothing set aside yet."
+                            hasBudget -> "${receiptMoney(activeObligationsMinor)}/month off the top — ${receiptMoney((budget.amountMinor - activeObligationsMinor).coerceAtLeast(0L))} of your ${receiptMoney(budget.amountMinor)} left to spend."
+                            else -> "${receiptMoney(activeObligationsMinor)}/month set aside. Set a budget and this comes off the top of it."
+                        },
                         color = receiptsColors.fade,
                         style = ReceiptsType.meta,
                         modifier = Modifier.padding(top = 9.dp),
@@ -266,7 +270,7 @@ fun SettingsScreen(
                         }
                     }
                     ReceiptDivider(Modifier.padding(top = 13.dp, bottom = 11.dp))
-                    Text("Skip in daily total by default", color = receiptsColors.ink, style = ReceiptsType.bodyStrong.copy(fontSize = 12.sp))
+                    Text("Skip in daily pace by default", color = receiptsColors.ink, style = ReceiptsType.bodyStrong.copy(fontSize = 12.sp))
                     Text("These categories still count toward your budget, just not the day-by-day chart. Any transaction can override this.", color = receiptsColors.fade, style = ReceiptsType.meta, modifier = Modifier.padding(top = 3.dp, bottom = 9.dp))
                     CommittedCategoriesPicker(preferences.committedCategoryIds) { next -> onPreferencesChange(preferences.copy(committedCategoryIds = next)) }
                 }
