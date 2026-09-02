@@ -8,7 +8,7 @@ import java.time.ZonedDateTime
 import java.time.temporal.TemporalAdjusters
 
 enum class Direction { DEBIT, CREDIT }
-enum class TransactionStatus { CONFIRMED, NEEDS_REVIEW, NEEDS_RESOLUTION, UNPARSEABLE, EXCLUDED }
+enum class TransactionStatus { CONFIRMED, CATEGORY_REVIEW, NEEDS_REVIEW, NEEDS_RESOLUTION, UNPARSEABLE, EXCLUDED }
 enum class TransactionSource { SMS, MANUAL, SAMPLE, LEGACY }
 
 data class Category(
@@ -35,10 +35,40 @@ data class Transaction(
     val refundOfId: String? = null,
     val rawMessage: String? = null,
     val recurring: Boolean = false,
+    val committed: Boolean = false,
 )
 
+/**
+ * Auto-detects whether a new transaction is a "committed" spend (rent, a lump transfer, an
+ * annual premium): tracked as spending, but excluded from day-by-day pacing so it doesn't
+ * crater "safe to spend today". Used for SMS-parsed transactions, which have no user checkbox.
+ */
+fun autoDetectCommitted(
+    categoryId: String?,
+    merchant: String,
+    amountMinor: Long,
+    direction: Direction,
+    history: List<Transaction>,
+    committedCategoryIds: Set<String>,
+): Boolean {
+    if (direction != Direction.DEBIT) return false
+    if (categoryId in committedCategoryIds) return true
+    val normalizedMerchant = merchant.trim().lowercase()
+    if (normalizedMerchant.isNotBlank()) {
+        val pastSameMerchant = history.count { it.direction == Direction.DEBIT && it.merchant.trim().lowercase() == normalizedMerchant }
+        if (pastSameMerchant >= 2) return true
+    }
+    val recentDebits = history.filter { it.direction == Direction.DEBIT && it.status != TransactionStatus.EXCLUDED }
+    if (recentDebits.size >= 5) {
+        val amounts = recentDebits.map { it.amountMinor }.sorted()
+        val median = amounts[amounts.size / 2]
+        if (median > 0 && amountMinor >= median * 4 && amountMinor >= 300_000L) return true
+    }
+    return false
+}
+
 data class Budget(
-    val amountMinor: Long = 30_000_00,
+    val amountMinor: Long = 0,
     val period: String = "Month",
     val repeats: Boolean = true,
     val carryOver: Boolean = false,
@@ -46,7 +76,27 @@ data class Budget(
     val endEpochDay: Long? = null,
     val categoryLimits: Map<String, Long> = emptyMap(),
     val resetDay: Int = 1,
+    val countInvestmentsAsSpending: Boolean = false,
+    val commitments: List<Commitment> = emptyList(),
 )
+
+/**
+ * A fixed obligation (rent, family transfer, a standing investment) the user declares up front
+ * rather than one detected from actual transactions. Its monthly amount is prorated to the
+ * active budget period and folded into spend so pacing accounts for money that's already spoken
+ * for, even before the real debit lands.
+ */
+data class Commitment(
+    val id: String,
+    val name: String,
+    val monthlyAmountMinor: Long,
+    val enabled: Boolean = true,
+)
+
+fun Budget.obligationsMinor(range: BudgetRange): Long {
+    val monthlySum = commitments.filter { it.enabled }.sumOf { it.monthlyAmountMinor }
+    return monthlySum * range.days / 30
+}
 
 data class BudgetRange(val start: LocalDate, val endInclusive: LocalDate) {
     val days: Int = (endInclusive.toEpochDay() - start.toEpochDay() + 1).toInt().coerceAtLeast(1)
@@ -79,6 +129,9 @@ data class ParsedTransaction(
     val refId: String?,
     val occurredAt: Long,
     val confidence: Float,
+    val suggestedCategoryId: String? = null,
+    val isExplicitRefund: Boolean = false,
+    val excludeByDefault: Boolean = false,
 )
 
 data class DashboardSnapshot(
@@ -91,6 +144,7 @@ data class DashboardSnapshot(
     val categoryTotals: Map<String, Long>,
     val range: BudgetRange,
     val dailyTotals: Map<LocalDate, Long>,
+    val committedMinor: Long = 0,
 )
 
 val Categories = listOf(
@@ -125,7 +179,8 @@ fun category(id: String?): Category? = Categories.firstOrNull { it.id == id }
 
 fun budgetRange(budget: Budget, today: LocalDate = LocalDate.now()): BudgetRange = when (budget.period) {
     "Week" -> {
-        val start = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        val startDay = DayOfWeek.of(budget.resetDay.coerceIn(1, 7))
+        val start = today.with(TemporalAdjusters.previousOrSame(startDay))
         BudgetRange(start, start.plusDays(6))
     }
     "Rolling" -> BudgetRange(today.minusDays(29), today)
@@ -149,43 +204,55 @@ fun dashboard(transactions: List<Transaction>, budget: Budget, now: Long = Syste
     val start = range.start.atStartOfDay(zone).toInstant().toEpochMilli()
     val endExclusive = range.endInclusive.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
     val active = transactions.filter {
-        it.status == TransactionStatus.CONFIRMED && it.occurredAt in start until endExclusive
+        it.status in IncludedStatuses && it.occurredAt in start until endExclusive
     }
-    val debits = active.filter {
-        it.direction == Direction.DEBIT && category(it.categoryId)?.notSpending != true
+    val includedDebits = active.filter { transaction ->
+        transaction.direction == Direction.DEBIT &&
+            (budget.countInvestmentsAsSpending || transaction.categoryId != "investment")
     }
-    val debitIds = debits.mapTo(mutableSetOf()) { it.id }
-    val refunds = active.filter {
-        it.direction == Direction.CREDIT && it.categoryId == "refund" && it.refundOfId in debitIds
-    }.sumOf { it.amountMinor }
-    val gross = debits.sumOf { it.amountMinor }
-    val spent = (gross - refunds).coerceAtLeast(0)
+    val debitCategories = transactions.filter { it.direction == Direction.DEBIT }.associate { it.id to it.categoryId.orEmpty() }
+    val includedCredits = active.filter { it.direction == Direction.CREDIT }
+    val debitTotal = includedDebits.sumOf { it.amountMinor }
+    val creditTotal = includedCredits.sumOf { it.amountMinor }
+    val obligationsMinor = budget.obligationsMinor(range)
+    val spent = debitTotal - creditTotal + obligationsMinor
     val remaining = budget.amountMinor - spent
     val day = (current.toEpochDay() - range.start.toEpochDay() + 1).toInt().coerceIn(1, range.days)
     val daysRemaining = (range.days - day + 1).coerceAtLeast(1)
-    val daily = debits.groupBy {
-        Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate()
-    }.mapValues { (_, items) -> items.sumOf { it.amountMinor } }.toMutableMap()
-    active.filter { it.direction == Direction.CREDIT && it.categoryId == "refund" && it.refundOfId in debitIds }
-        .forEach { credit ->
-            val date = Instant.ofEpochMilli(credit.occurredAt).atZone(zone).toLocalDate()
-            daily[date] = (daily[date] ?: 0L) - credit.amountMinor
-        }
+    val committedMinor = includedDebits.filter { it.committed }.sumOf { it.amountMinor } + obligationsMinor
 
-    val spentToday = daily[current]?.coerceAtLeast(0) ?: 0L
-    val remainingBeforeToday = budget.amountMinor - (spent - spentToday)
-    val safeToday = remainingBeforeToday / daysRemaining - spentToday
-    val categoryTotals = debits.groupBy { it.categoryId.orEmpty() }
-        .mapValues { (_, items) -> items.sumOf { it.amountMinor } }.toMutableMap()
-    active.filter { it.direction == Direction.CREDIT && it.categoryId == "refund" && it.refundOfId in debitIds }
-        .forEach { refund ->
-            val refundedCategory = debits.firstOrNull { it.id == refund.refundOfId }?.categoryId ?: return@forEach
-            categoryTotals[refundedCategory] = ((categoryTotals[refundedCategory] ?: 0L) - refund.amountMinor).coerceAtLeast(0)
+    // Day-by-day pacing excludes committed spend (rent, lump transfers, annual premiums) so a
+    // single big payment doesn't crater "safe to spend today" — it still counts in `spent` above.
+    val daily = active.groupBy {
+        Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate()
+    }.mapValues { (_, items) ->
+        items.sumOf { transaction ->
+            when {
+                transaction.direction == Direction.DEBIT && !transaction.committed && (budget.countInvestmentsAsSpending || transaction.categoryId != "investment") -> transaction.amountMinor
+                transaction.direction == Direction.CREDIT -> -transaction.amountMinor
+                else -> 0L
+            }
         }
+    }.filterValues { it != 0L }.toMutableMap()
+
+    val pacedSpentToday = daily[current] ?: 0L
+    val committedToday = includedDebits.filter { it.committed && Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() == current }.sumOf { it.amountMinor }
+    val trueSpentToday = pacedSpentToday + committedToday
+    val remainingBeforeToday = budget.amountMinor - (spent - trueSpentToday)
+    val safeToday = remainingBeforeToday / daysRemaining - pacedSpentToday
+    val categoryTotals = mutableMapOf<String, Long>()
+    includedDebits.forEach { transaction ->
+        val key = transaction.categoryId.orEmpty()
+        categoryTotals[key] = (categoryTotals[key] ?: 0L) + transaction.amountMinor
+    }
+    includedCredits.forEach { credit ->
+        val key = credit.refundOfId?.let(debitCategories::get) ?: credit.categoryId.orEmpty()
+        categoryTotals[key] = (categoryTotals[key] ?: 0L) - credit.amountMinor
+    }
 
     return DashboardSnapshot(
         spentMinor = spent,
-        refundedMinor = refunds,
+        refundedMinor = creditTotal,
         remainingMinor = remaining,
         safeTodayMinor = safeToday,
         dayOfPeriod = day,
@@ -193,8 +260,11 @@ fun dashboard(transactions: List<Transaction>, budget: Budget, now: Long = Syste
         categoryTotals = categoryTotals,
         range = range,
         dailyTotals = daily,
+        committedMinor = committedMinor,
     )
 }
+
+private val IncludedStatuses = setOf(TransactionStatus.CONFIRMED, TransactionStatus.CATEGORY_REVIEW)
 
 fun categoryLimitStatuses(
     transactions: List<Transaction>,

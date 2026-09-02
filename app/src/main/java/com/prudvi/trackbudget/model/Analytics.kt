@@ -29,13 +29,12 @@ fun spendingAnalytics(
     val periodEnd = snapshot.range.endInclusive.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
     val activeDebits = transactions.filter {
         it.direction == Direction.DEBIT &&
-            it.status == TransactionStatus.CONFIRMED &&
+            it.status in setOf(TransactionStatus.CONFIRMED, TransactionStatus.CATEGORY_REVIEW) &&
             it.occurredAt in periodStart until periodEnd &&
-            category(it.categoryId)?.notSpending != true
+            (budget.countInvestmentsAsSpending || it.categoryId != "investment")
     }
     val projected = if (snapshot.dayOfPeriod <= 0) 0 else snapshot.spentMinor * snapshot.daysInPeriod / snapshot.dayOfPeriod
-    val fixedIds = setOf("rent", "subscription", "bills", "insurance")
-    val committed = activeDebits.filter { it.categoryId in fixedIds }.sumOf { it.amountMinor }
+    val committed = snapshot.committedMinor
     val flexible = (snapshot.spentMinor - committed).coerceAtLeast(0)
 
     val previousStart = snapshot.range.start.minusDays(snapshot.range.days.toLong())
@@ -43,9 +42,9 @@ fun spendingAnalytics(
     val previousByCategory = transactions.filter {
         val date = Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate()
         it.direction == Direction.DEBIT &&
-            it.status == TransactionStatus.CONFIRMED &&
+            it.status in setOf(TransactionStatus.CONFIRMED, TransactionStatus.CATEGORY_REVIEW) &&
             date >= previousStart && date < previousEnd &&
-            category(it.categoryId)?.notSpending != true
+            (budget.countInvestmentsAsSpending || it.categoryId != "investment")
     }.groupBy { it.categoryId.orEmpty() }.mapValues { (_, values) -> values.sumOf { it.amountMinor } }
     val categoryShifts = (snapshot.categoryTotals.keys + previousByCategory.keys).map { id ->
         CategoryShift(id, (snapshot.categoryTotals[id] ?: 0) - (previousByCategory[id] ?: 0))
@@ -57,7 +56,7 @@ fun spendingAnalytics(
     val topThree = topMerchants.take(3).sumOf { it.amountMinor }
 
     val recurringByPattern = transactions.filter {
-        it.direction == Direction.DEBIT && it.status == TransactionStatus.CONFIRMED
+        it.direction == Direction.DEBIT && it.status in setOf(TransactionStatus.CONFIRMED, TransactionStatus.CATEGORY_REVIEW)
     }.groupBy { it.merchant.trim().lowercase() }.filterValues { values ->
         values.map { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate().withDayOfMonth(1) }.distinct().size > 1
     }.keys

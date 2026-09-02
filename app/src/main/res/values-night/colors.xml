@@ -11,4 +11,5 @@
     <color name="receipt_ultramarine">#8B97FF</color>
     <color name="receipt_chrome">#F2C630</color>
     <color name="receipt_chilli">#FF6B52</color>
+    <color name="receipt_chilli_on">#15181A</color>
 </resources>

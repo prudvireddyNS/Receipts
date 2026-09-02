@@ -1,15 +1,18 @@
 package com.prudvi.trackbudget.data
 
 import android.content.Context
-import android.provider.Telephony
 import com.prudvi.trackbudget.model.Budget
+import com.prudvi.trackbudget.model.Commitment
 import com.prudvi.trackbudget.model.Direction
+import com.prudvi.trackbudget.model.autoDetectCommitted
 import com.prudvi.trackbudget.model.LearnedRule
 import com.prudvi.trackbudget.model.ParsedTransaction
 import com.prudvi.trackbudget.model.Transaction
 import com.prudvi.trackbudget.model.TransactionSource
 import com.prudvi.trackbudget.model.TransactionStatus
+import com.prudvi.trackbudget.model.budgetRange
 import com.prudvi.trackbudget.model.findRefundCandidate
+import com.prudvi.trackbudget.model.periodKey
 import com.prudvi.trackbudget.sms.SmsParser
 import com.prudvi.trackbudget.widget.BudgetWidgetProvider
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,67 +24,103 @@ import java.util.UUID
 class TrackRepository(private val context: Context) {
     private val database = TrackDatabase(context)
     private val preferences = context.getSharedPreferences("track_budget", Context.MODE_PRIVATE)
-    val receipts by lazy { ReceiptsRepository(context, database, preferences) }
+    val receipts by lazy { ReceiptsRepository(context, preferences) }
     private val categoryLimitNotifier = CategoryLimitNotifier(context, preferences)
     private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
     private val _learnedRules = MutableStateFlow<List<LearnedRule>>(emptyList())
-    private val _ignoredSources = MutableStateFlow<Set<String>>(emptySet())
 
     init {
         migrateLegacyData(context, database, preferences)
         backfillMerchantTitles()
         _transactions.value = database.transactions()
         _learnedRules.value = loadLearnedRules()
-        _ignoredSources.value = preferences.getStringSet("ignored_sources", emptySet()).orEmpty().toSet()
-        categoryLimitNotifier.evaluate(budget, _transactions.value, onboardingComplete)
-        receipts.refreshFeatures(_transactions.value, budget)
+        categoryLimitNotifier.evaluate(activeBudget(), _transactions.value, onboardingComplete)
     }
 
     val transactions: StateFlow<List<Transaction>> = _transactions
     val learnedRules: StateFlow<List<LearnedRule>> = _learnedRules
-    val ignoredSources: StateFlow<Set<String>> = _ignoredSources
+
+    var smsTrackingEnabled: Boolean
+        get() = preferences.getBoolean("sms_tracking_enabled", false)
+        set(value) {
+            preferences.edit().putBoolean("sms_tracking_enabled", value).apply()
+        }
+
+    var countInvestmentsAsSpending: Boolean
+        get() = preferences.getBoolean("count_investments_as_spending", false)
+        set(value) {
+            updateBudget(budget.copy(countInvestmentsAsSpending = value))
+        }
+
+    var biometricLockEnabled: Boolean
+        get() = preferences.getBoolean("biometric_lock_enabled", false)
+        set(value) {
+            preferences.edit().putBoolean("biometric_lock_enabled", value).apply()
+        }
+
+    val previousBudgetAmountMinor: Long
+        get() = preferences.getLong("previous_budget_minor", 0)
+
+    val currentPeriodBudgetConfirmed: Boolean
+        get() = preferences.getString("budget_confirmed_key", null) == budgetConfirmationKey(budget)
 
     val onboardingComplete: Boolean
         get() = preferences.getBoolean("onboarding_complete", false)
 
     var budget: Budget
-        get() = Budget(
-            amountMinor = preferences.getLong("budget_minor", 30_000_00),
-            period = preferences.getString("budget_period", "Month") ?: "Month",
-            repeats = preferences.getBoolean("budget_repeats", true),
-            carryOver = preferences.getBoolean("budget_carry", false),
-            startEpochDay = preferences.getLong("budget_start_day", Long.MIN_VALUE).takeUnless { it == Long.MIN_VALUE },
-            endEpochDay = preferences.getLong("budget_end_day", Long.MIN_VALUE).takeUnless { it == Long.MIN_VALUE },
-            categoryLimits = preferences.getStringSet("budget_limits", emptySet()).orEmpty().mapNotNull { value ->
-                val parts = value.split('=')
-                if (parts.size == 2) parts[1].toLongOrNull()?.let { parts[0] to it } else null
-            }.toMap(),
-            resetDay = preferences.getInt("reset_day", 1).coerceIn(1, 28),
-        )
+        get() {
+            val period = when (preferences.getString("budget_period", "Month")) {
+                "Week" -> "Week"
+                else -> "Month"
+            }
+            return Budget(
+                amountMinor = preferences.getLong("budget_minor", 0),
+                period = period,
+                repeats = preferences.getBoolean("budget_repeats", true),
+                carryOver = preferences.getBoolean("budget_carry", false),
+                startEpochDay = preferences.getLong("budget_start_day", Long.MIN_VALUE).takeUnless { it == Long.MIN_VALUE },
+                endEpochDay = preferences.getLong("budget_end_day", Long.MIN_VALUE).takeUnless { it == Long.MIN_VALUE },
+                categoryLimits = preferences.getStringSet("budget_limits", emptySet()).orEmpty().mapNotNull { value ->
+                    val parts = value.split('=')
+                    if (parts.size == 2) parts[1].toLongOrNull()?.let { parts[0] to it } else null
+                }.toMap(),
+                resetDay = preferences.getInt("reset_day", 1).coerceIn(if (period == "Week") 1..7 else 1..28),
+                countInvestmentsAsSpending = preferences.getBoolean("count_investments_as_spending", false),
+                commitments = preferences.getStringSet("budget_commitments", emptySet()).orEmpty().mapNotNull { encoded ->
+                    val parts = encoded.split('|')
+                    if (parts.size != 4) return@mapNotNull null
+                    val amount = parts[2].toLongOrNull() ?: return@mapNotNull null
+                    Commitment(id = parts[0], name = parts[1], monthlyAmountMinor = amount, enabled = parts[3] == "1")
+                },
+            )
+        }
         private set(value) {
-            preferences.edit()
-                .putLong("budget_minor", value.amountMinor)
-                .putString("budget_period", value.period)
-                .putString(
-                    "rhythm",
-                    when (value.period) {
-                        "Week" -> "WEEKLY"
-                        "Rolling" -> "ROLLING"
-                        else -> "MONTHLY"
-                    },
-                )
+            val period = if (value.period == "Week") "Week" else "Month"
+            val resetDay = value.resetDay.coerceIn(if (period == "Week") 1..7 else 1..28)
+            val previousBudget = budget
+            val rhythmOrResetChanged = previousBudget.period != period || previousBudget.resetDay != resetDay
+            val editor = preferences.edit()
+                .putLong("budget_minor", value.amountMinor.coerceAtLeast(0))
+                .putString("budget_period", period)
+                .putString("rhythm", if (period == "Week") "WEEKLY" else "MONTHLY")
                 .putBoolean("budget_repeats", value.repeats)
                 .putBoolean("budget_carry", value.carryOver)
-                .putInt("reset_day", value.resetDay.coerceIn(1, 28))
+                .putInt("reset_day", resetDay)
+                .putBoolean("count_investments_as_spending", value.countInvestmentsAsSpending)
                 .apply {
-                    if (value.startEpochDay == null) remove("budget_start_day") else putLong("budget_start_day", value.startEpochDay)
-                    if (value.endEpochDay == null) remove("budget_end_day") else putLong("budget_end_day", value.endEpochDay)
+                    remove("budget_start_day")
+                    remove("budget_end_day")
                 }
                 .putStringSet("budget_limits", value.categoryLimits.mapTo(mutableSetOf()) { "${it.key}=${it.value}" })
-                .apply()
+                .putStringSet(
+                    "budget_commitments",
+                    value.commitments.mapTo(mutableSetOf()) { "${it.id}|${it.name.replace('|', ' ')}|${it.monthlyAmountMinor}|${if (it.enabled) "1" else "0"}" },
+                )
+            if (value.amountMinor > 0) editor.putLong("previous_budget_minor", value.amountMinor)
+            if (rhythmOrResetChanged) editor.remove("budget_confirmed_key")
+            editor.apply()
             BudgetWidgetProvider.updateAll(context)
-            categoryLimitNotifier.evaluate(value, _transactions.value, onboardingComplete)
-            receipts.refreshFeatures(_transactions.value, value)
+            categoryLimitNotifier.evaluate(activeBudget(), _transactions.value, onboardingComplete)
         }
 
     fun finishOnboarding(value: Budget) {
@@ -95,16 +134,24 @@ class TrackRepository(private val context: Context) {
         budget = value
     }
 
-    fun refreshCategoryLimitAlerts() {
-        categoryLimitNotifier.evaluate(budget, _transactions.value, onboardingComplete)
+    fun confirmCurrentPeriodBudget() {
+        val current = budget
+        preferences.edit().putString("budget_confirmed_key", budgetConfirmationKey(current)).apply()
+        categoryLimitNotifier.evaluate(current, _transactions.value, onboardingComplete)
+        BudgetWidgetProvider.updateAll(context)
     }
 
-    fun setSourceIgnored(key: String, ignored: Boolean) {
-        val updated = _ignoredSources.value.toMutableSet().apply {
-            if (ignored) add(key) else remove(key)
-        }
-        preferences.edit().putStringSet("ignored_sources", updated).apply()
-        _ignoredSources.value = updated
+    fun invalidateCurrentPeriodBudgetConfirmation() {
+        preferences.edit().remove("budget_confirmed_key").apply()
+        BudgetWidgetProvider.updateAll(context)
+    }
+
+    fun rerunOnboarding() {
+        preferences.edit().putBoolean("onboarding_complete", false).apply()
+    }
+
+    fun refreshCategoryLimitAlerts() {
+        categoryLimitNotifier.evaluate(activeBudget(), _transactions.value, onboardingComplete)
     }
 
     fun addLearnedRule(merchant: String, categoryId: String, direction: Direction? = null) {
@@ -121,7 +168,7 @@ class TrackRepository(private val context: Context) {
     }
 
     @Synchronized
-    fun addManual(amountMinor: Long, merchant: String, categoryId: String, direction: Direction, occurredAt: Long = System.currentTimeMillis()) {
+    fun addManual(amountMinor: Long, merchant: String, categoryId: String, direction: Direction, occurredAt: Long = System.currentTimeMillis(), committed: Boolean = false) {
         require(amountMinor > 0) { "Amount must be positive" }
         val transaction = Transaction(
             id = UUID.randomUUID().toString(),
@@ -132,6 +179,7 @@ class TrackRepository(private val context: Context) {
             categoryId = categoryId,
             status = TransactionStatus.CONFIRMED,
             source = TransactionSource.MANUAL,
+            committed = committed,
         )
         database.insert(transaction)
         refresh()
@@ -142,70 +190,33 @@ class TrackRepository(private val context: Context) {
         val transaction = parseSms(sender, body, receivedAt) ?: return null
         if (!database.insert(transaction)) {
             val existing = transaction.refId?.let(database::findByRef) ?: return null
-            database.update(
-                existing.copy(
-                    merchant = if (existing.merchant == "Uncategorised payment") transaction.merchant else existing.merchant,
-                    accountTail = existing.accountTail ?: transaction.accountTail,
-                    sender = existing.sender ?: transaction.sender,
-                    rawMessage = existing.rawMessage ?: transaction.rawMessage,
-                    categoryId = existing.categoryId ?: transaction.categoryId,
-                ),
+            if (existing.note == USER_EDITED_MARKER && (
+                    existing.amountMinor != transaction.amountMinor ||
+                        existing.direction != transaction.direction ||
+                        existing.merchant != transaction.merchant ||
+                        existing.categoryId != transaction.categoryId
+                    )
+            ) {
+                val conflict = existing.copy(status = TransactionStatus.NEEDS_REVIEW)
+                database.update(conflict)
+                refresh()
+                return conflict
+            }
+            val enriched = existing.copy(
+                merchant = if (existing.merchant == "Uncategorised payment") transaction.merchant else existing.merchant,
+                accountTail = existing.accountTail ?: transaction.accountTail,
+                sender = existing.sender ?: transaction.sender,
+                rawMessage = existing.rawMessage ?: transaction.rawMessage,
+                categoryId = existing.categoryId ?: transaction.categoryId,
             )
-            refresh()
-            return existing
+            if (enriched != existing) {
+                database.update(enriched)
+                refresh()
+            }
+            return null
         }
         refresh()
         return transaction
-    }
-
-    @Synchronized
-    fun importInbox(days: Int = 90): Int {
-        if (preferences.getBoolean("legacy_sms_highwater_pending", false)) {
-            val newestId = context.contentResolver.query(
-                Telephony.Sms.Inbox.CONTENT_URI,
-                arrayOf(Telephony.Sms._ID),
-                null,
-                null,
-                "${Telephony.Sms._ID} DESC",
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getLong(0) else 0L
-            } ?: 0L
-            preferences.edit()
-                .putLong("last_sms_id", newestId)
-                .putBoolean("legacy_sms_highwater_pending", false)
-                .apply()
-            receipts.markSmsSynced()
-            return 0
-        }
-
-        val since = System.currentTimeMillis() - days * 86_400_000L
-        val lastId = preferences.getLong("last_sms_id", 0)
-        var highestId = lastId
-        var imported = 0
-        context.contentResolver.query(
-            Telephony.Sms.Inbox.CONTENT_URI,
-            arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
-            "${Telephony.Sms.DATE} >= ? AND ${Telephony.Sms._ID} > ?",
-            arrayOf(since.toString(), lastId.toString()),
-            "${Telephony.Sms._ID} ASC",
-        )?.use { cursor ->
-            val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
-            val senderIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
-            val bodyIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
-            val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idIndex)
-                highestId = maxOf(highestId, id)
-                val sender = cursor.getString(senderIndex) ?: continue
-                val body = cursor.getString(bodyIndex) ?: continue
-                val transaction = parseSms(sender, body, cursor.getLong(dateIndex)) ?: continue
-                if (database.insert(transaction)) imported++
-            }
-        }
-        preferences.edit().putLong("last_sms_id", highestId).apply()
-        receipts.markSmsSynced()
-        refresh()
-        return imported
     }
 
     @Synchronized
@@ -224,7 +235,6 @@ class TrackRepository(private val context: Context) {
     @Synchronized
     fun clearAll() {
         database.clear()
-        receipts.clearTransactionHistoryState()
         refresh()
     }
 
@@ -256,38 +266,34 @@ class TrackRepository(private val context: Context) {
     }
 
     private fun parseSms(sender: String, body: String, receivedAt: Long): Transaction? {
-        if ("sender:$sender" in _ignoredSources.value) return null
-        val parsed = SmsParser.parse(sender, body, receivedAt)
-        if (parsed == null) {
-            if (!SmsParser.isPaymentCandidate(sender, body)) return null
-            return Transaction(
-                id = UUID.randomUUID().toString(),
-                amountMinor = 0,
-                direction = Direction.DEBIT,
-                occurredAt = receivedAt,
-                merchant = "Unknown payment",
-                categoryId = null,
-                status = TransactionStatus.UNPARSEABLE,
-                source = TransactionSource.SMS,
-                sender = sender,
-                sourceKey = sourceKey(sender, receivedAt, body),
-                rawMessage = body,
-            )
-        }
-        if (parsed.accountTail?.let { "account:$it" in _ignoredSources.value } == true) return null
+        if (!smsTrackingEnabled) return null
+        val parsed = SmsParser.parse(sender, body, receivedAt) ?: return null
         return parsed.toTransaction(sender, body)
     }
 
     private fun ParsedTransaction.toTransaction(sender: String, body: String): Transaction {
+        val knownSender = SmsParser.senderKey(sender) != null && sender.any(Char::isLetter)
         val normalizedMerchant = merchant.trim().uppercase()
-        val matchingRules = _learnedRules.value.filter { it.merchant == normalizedMerchant }
-        val learned = (matchingRules.firstOrNull { it.direction == direction }
-            ?: matchingRules.firstOrNull { it.direction == null && it.appliesTo(direction) })?.categoryId
-        val inferred = if (direction == Direction.DEBIT) learned ?: inferCategory(merchant) else learned
+        val matchingRules = if (direction == Direction.DEBIT) _learnedRules.value.filter { it.merchant == normalizedMerchant } else emptyList()
+        val learned = (matchingRules.firstOrNull { it.direction == Direction.DEBIT }
+            ?: matchingRules.firstOrNull { it.direction == null && it.appliesTo(Direction.DEBIT) })?.categoryId
+        val inferred = when {
+            direction == Direction.CREDIT && isExplicitRefund -> "refund"
+            direction == Direction.DEBIT -> learned ?: suggestedCategoryId ?: inferCategory(merchant)
+            else -> null
+        }
+        val needsCategoryReview = direction == Direction.DEBIT && learned == null && (inferred == null || confidence < 0.75f)
+        val categoryId = when {
+            direction == Direction.DEBIT -> inferred ?: "misc"
+            else -> inferred
+        }
         val status = when {
-            learned != null -> TransactionStatus.CONFIRMED
+            excludeByDefault -> TransactionStatus.EXCLUDED
+            !knownSender -> TransactionStatus.NEEDS_REVIEW
+            direction == Direction.CREDIT && isExplicitRefund -> TransactionStatus.CONFIRMED
             direction == Direction.CREDIT -> TransactionStatus.NEEDS_RESOLUTION
-            inferred == null || confidence < 0.75f -> TransactionStatus.NEEDS_REVIEW
+            learned != null -> TransactionStatus.CONFIRMED
+            needsCategoryReview -> TransactionStatus.CATEGORY_REVIEW
             else -> TransactionStatus.CONFIRMED
         }
         val candidate = Transaction(
@@ -296,23 +302,27 @@ class TrackRepository(private val context: Context) {
             direction = direction,
             occurredAt = occurredAt,
             merchant = merchant,
-            categoryId = inferred,
+            categoryId = categoryId,
             status = status,
             source = TransactionSource.SMS,
             accountTail = accountTail,
             sender = sender,
             refId = refId,
-            sourceKey = sourceKey(sender, occurredAt, body),
+            sourceKey = sourceKey(sender, body),
             rawMessage = body,
+            committed = autoDetectCommitted(categoryId, merchant, amountMinor, direction, database.transactions(), receipts.preferencesFlow.value.committedCategoryIds),
         )
-        val refundMatch = if (inferred == "refund") findRefundCandidate(database.transactions(), candidate)?.id else null
-        return candidate.copy(
-            refundOfId = refundMatch,
-        )
+        val refundMatch = if (categoryId == "refund") findRefundCandidate(database.transactions(), candidate)?.id else null
+        return candidate.copy(refundOfId = refundMatch)
     }
 
-    private fun sourceKey(sender: String, occurredAt: Long, body: String): String = MessageDigest.getInstance("SHA-256")
-        .digest("$sender|$occurredAt|$body".toByteArray())
+    private fun budgetConfirmationKey(value: Budget): String {
+        val range = periodKey(budgetRange(value))
+        return "$range:${value.amountMinor}:${value.period}:${value.resetDay}"
+    }
+
+    private fun sourceKey(sender: String, body: String): String = MessageDigest.getInstance("SHA-256")
+        .digest("$sender|$body".toByteArray())
         .take(12)
         .joinToString("") { "%02x".format(it) }
 
@@ -374,7 +384,12 @@ class TrackRepository(private val context: Context) {
     private fun refresh() {
         _transactions.value = database.transactions()
         BudgetWidgetProvider.updateAll(context)
-        categoryLimitNotifier.evaluate(budget, _transactions.value, onboardingComplete)
-        receipts.refreshFeatures(_transactions.value, budget)
+        categoryLimitNotifier.evaluate(activeBudget(), _transactions.value, onboardingComplete)
+    }
+
+    private fun activeBudget(): Budget = if (currentPeriodBudgetConfirmed) budget else budget.copy(amountMinor = 0L)
+
+    companion object {
+        const val USER_EDITED_MARKER = "__user_edited__"
     }
 }

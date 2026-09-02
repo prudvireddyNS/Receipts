@@ -3,16 +3,27 @@ package com.prudvi.trackbudget.sms
 import com.prudvi.trackbudget.model.Direction
 import com.prudvi.trackbudget.model.ParsedTransaction
 import java.math.RoundingMode
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 object SmsParser {
-    private val money = Regex("""(?i)(?:inr|rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(?:inr|rs\.?|₹)""")
-    private val transactionVerb = Regex("""(?i)\b(debited|debit|spent|paid|withdrawn|withdrawal|purchase|charged|deducted|sent|transferred|credited|credit|received|deposited|refund|refunded|reversed)\b""")
+    private val money = Regex("""(?i)(?:\b(?:inr|rs\.?)\s*|₹\s*)([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(?:\b(?:inr|rs\.?)\b|₹)""")
+    private val transactionVerb = Regex("""(?i)\b(debited|debit|spent|paid|withdrawn|withdrawal|purchase|charged|deducted|sent|transferred|credited|credit|received|deposited|refund|refunded|reversal|reversed)\b""")
     private val debitVerb = setOf("debited", "debit", "spent", "paid", "withdrawn", "withdrawal", "purchase", "charged", "deducted", "sent", "transferred")
-    private val creditVerb = setOf("credited", "credit", "received", "deposited", "refund", "refunded", "reversed")
-    private val hardNegative = Regex("""(?i)\b(otp|one[- ]time password|do not share|verification code|will be debited|is due|due on|minimum amount due|cashback offer|apply now|eligible for|pre[- ]approved|loan offer|failed|declined|unsuccessful|rejected)\b""")
+    private val creditVerb = setOf("credited", "credit", "received", "deposited", "refund", "refunded", "reversal", "reversed")
+    private val hardNegative = Regex("""(?i)\b(otp|one[- ]time password|do not share|verification code|will be debited|is due|due on|minimum amount due|cashback offer|apply now|eligible for|pre[- ]approved|loan offer|failed|declined|unsuccessful|rejected|pending|cancelled|canceled)\b""")
     private val mandateNoise = Regex("""(?i)\b(autopay|mandate|e-mandate)\b.{0,50}\b(registration|register|created|revoke|revoked|pause|paused|will be debited|upcoming)\b|\bupcoming mandate\b""")
-    private val repayment = Regex("""(?i)\brepayment of\b.{0,30}\breceived for\b.{0,40}\bcredit card\b""")
-    private val repaymentDebit = Regex("""(?i)\b(?:credit card|card bill)\b.{0,45}\b(?:paid|payment|sent|debited)\b|\bsent from a/c\b.{0,60}\bto\s+["']?\w+\s+small fi\b""")
+    private val nonInr = Regex("""(?i)(?:[${'$'}€£]|\b(?:usd|eur|gbp|aed|sgd|aud|cad)\b)""")
+    private val explicitRefund = Regex("""(?i)\b(refund(?:ed)?|reversal|reversed)\b""")
+    private val selfTransfer = Regex("""(?i)\b(self transfer|own account|between your accounts|to your (?:a/c|acct|account)|from your (?:a/c|acct|account).{0,60}to your (?:a/c|acct|account))\b""")
+    private val atmWithdrawal = Regex("""(?i)\b(atm|cash)\b.{0,30}\b(withdrawn|withdrawal)\b|\b(withdrawn|withdrawal)\b.{0,30}\b(atm|cash)\b""")
+    private val investment = Regex("""(?i)\b(mutual fund|sip|nps|zerodha|groww|upstox|demat|investment)\b""")
+    private val cardRepayment = Regex("""(?i)\b(?:credit card|card bill|cc)\b.{0,80}\b(?:bill payment|payment received|repayment|payment of)\b|\b(?:bill payment|repayment)\b.{0,80}\b(?:credit card|card bill|cc)\b|\bsent from a/c\b.{0,60}\bto\s+["']?\w+\s+small fi\b""")
     private val balance = Regex("""(?i)\b(?:avl|available|clear|closing)?\s*bal(?:ance)?[^\d]{0,12}(?:inr|rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)""")
     private val account = Regex("""(?i)\b(?:a/c|acct|account|card|ac)\b[^\d]{0,10}(?:[xX*]+)?(\d{3,6})|\b[xX*]{2,}(\d{3,6})\b""")
     private val reference = Regex("""(?i)\b(?:ref|rrn|utr|txn|transaction)\s*(?:no\.?|id|#)?[:\s]*([A-Za-z0-9]{6,22})\b""")
@@ -36,19 +47,16 @@ object SmsParser {
 
     fun isPaymentCandidate(sender: String, body: String): Boolean {
         if (senderKey(sender) == null && sender.count(Char::isDigit) !in 5..6) return false
-        if (hardNegative.containsMatchIn(body) || mandateNoise.containsMatchIn(body) || repayment.containsMatchIn(body) || repaymentDebit.containsMatchIn(body)) return false
+        if (nonInr.containsMatchIn(body) || hardNegative.containsMatchIn(body) || mandateNoise.containsMatchIn(body)) return false
         val completedTransaction = Regex(
-            "(?i)\\b(debited|credited|spent|paid|withdrawn|withdrawal|purchase|charged|deducted|transferred|refunded|reversed)\\b",
+            "(?i)\\b(debited|debit|credited|credit|received|deposited|spent|paid|withdrawn|withdrawal|purchase|charged|deducted|transferred|refund|refunded|reversal|reversed)\\b",
         )
-        val pendingTransaction = Regex(
-            "(?i)\\b(payment|transaction)\\b.{0,50}\\b(pending|confirmation|reference|ref|unavailable)\\b",
-        )
-        return completedTransaction.containsMatchIn(body) || pendingTransaction.containsMatchIn(body)
+        return completedTransaction.containsMatchIn(body) && money.containsMatchIn(body)
     }
 
     fun parse(sender: String, body: String, receivedAt: Long): ParsedTransaction? {
         if (senderKey(sender) == null && sender.count(Char::isDigit) !in 5..6) return null
-        if (hardNegative.containsMatchIn(body) || mandateNoise.containsMatchIn(body) || repayment.containsMatchIn(body) || repaymentDebit.containsMatchIn(body)) return null
+        if (nonInr.containsMatchIn(body) || hardNegative.containsMatchIn(body) || mandateNoise.containsMatchIn(body)) return null
 
         val verbs = transactionVerb.findAll(body).toList()
         if (verbs.isEmpty()) return null
@@ -93,9 +101,56 @@ object SmsParser {
             merchant = merchant,
             accountTail = accountTail,
             refId = refId,
-            occurredAt = receivedAt,
+            occurredAt = if (direction == Direction.CREDIT && explicitRefund.containsMatchIn(body)) receivedAt else transactionTime(body, receivedAt),
             confidence = confidence.coerceIn(0f, 1f),
+            suggestedCategoryId = suggestedCategory(body, merchant, direction),
+            isExplicitRefund = direction == Direction.CREDIT && explicitRefund.containsMatchIn(body),
+            excludeByDefault = shouldExcludeByDefault(body, direction),
         )
+    }
+
+    private fun suggestedCategory(body: String, merchant: String, direction: Direction): String? {
+        val text = "$body $merchant"
+        return when {
+            direction == Direction.CREDIT && explicitRefund.containsMatchIn(body) -> "refund"
+            cardRepayment.containsMatchIn(body) -> "repayments"
+            selfTransfer.containsMatchIn(body) -> "transfers"
+            atmWithdrawal.containsMatchIn(body) -> "cash"
+            direction == Direction.DEBIT && investment.containsMatchIn(text) -> "investment"
+            direction == Direction.DEBIT && Regex("""(?i)\b(loan|emi)\b""").containsMatchIn(text) -> "bills"
+            else -> null
+        }
+    }
+
+    private fun shouldExcludeByDefault(body: String, direction: Direction): Boolean =
+        cardRepayment.containsMatchIn(body) ||
+            selfTransfer.containsMatchIn(body) ||
+            (direction == Direction.DEBIT && atmWithdrawal.containsMatchIn(body))
+
+    private fun transactionTime(body: String, receivedAt: Long): Long {
+        val zone = ZoneId.systemDefault()
+        val received = Instant.ofEpochMilli(receivedAt).atZone(zone)
+        val numeric = Regex("""\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b""").find(body)
+        val date = numeric?.let { match ->
+            val year = match.groupValues[3].toInt().let { if (it < 100) 2000 + it else it }
+            runCatching { LocalDate.of(year, match.groupValues[2].toInt(), match.groupValues[1].toInt()) }.getOrNull()
+        } ?: Regex("""(?i)\b(\d{1,2}\s+[A-Za-z]{3}\s+\d{2,4})\b""").find(body)?.groupValues?.get(1)?.let { value ->
+            listOf("d MMM yyyy", "d MMM yy").firstNotNullOfOrNull { pattern ->
+                runCatching { LocalDate.parse(value, DateTimeFormatter.ofPattern(pattern, Locale.ENGLISH)) }.getOrNull()
+            }
+        } ?: return receivedAt
+        if (date.isAfter(received.toLocalDate().plusDays(1))) return receivedAt
+        val timeMatch = Regex("""(?i)\b(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?\b""").find(body)
+        val time = timeMatch?.let { match ->
+            var hour = match.groupValues[1].toInt()
+            val minute = match.groupValues[2].toInt()
+            when (match.groupValues[3].lowercase()) {
+                "am" -> if (hour == 12) hour = 0
+                "pm" -> if (hour < 12) hour += 12
+            }
+            runCatching { LocalTime.of(hour, minute) }.getOrNull()
+        } ?: received.toLocalTime()
+        return LocalDateTime.of(date, time).atZone(zone).toInstant().toEpochMilli()
     }
 
     fun merchantFromBody(body: String, direction: Direction): String? {

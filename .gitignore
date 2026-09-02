@@ -15,3 +15,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# scratch recordings
+anim.mp4
+*.mp4

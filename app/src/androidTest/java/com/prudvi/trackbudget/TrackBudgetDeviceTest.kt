@@ -24,16 +24,10 @@ class TrackBudgetDeviceTest {
     fun primaryNavigationAndSettingsRender() {
         compose.onNodeWithText("RECEIPTS").assertIsDisplayed()
 
-        compose.onNodeWithText("LEDGER").performClick()
+        compose.onNodeWithText("HISTORY").performClick()
         compose.onNodeWithText("Search receipts").assertIsDisplayed()
 
-        compose.onNodeWithText("FEED").performClick()
-        compose.onNodeWithText("Feed").assertIsDisplayed()
-
-        compose.onNodeWithText("GOALS").performClick()
-        compose.onNodeWithText("STAMPS").assertIsDisplayed()
-
-        compose.onNodeWithText("TODAY").performClick()
+        compose.onNodeWithText("HOME").performClick()
         compose.onNodeWithContentDescription("Open settings").performClick()
         compose.onNodeWithText("Settings").assertIsDisplayed()
         compose.onNodeWithText("Network access").assertIsDisplayed()
@@ -41,7 +35,7 @@ class TrackBudgetDeviceTest {
 
     @Test
     fun manualEntryOpensWithoutWritingData() {
-        compose.onNodeWithContentDescription("New receipt").performClick()
+        compose.onNodeWithContentDescription("Add receipt").performClick()
         compose.onNodeWithText("New receipt").assertIsDisplayed()
         compose.onNodeWithText("Spent").assertIsDisplayed()
         compose.onNodeWithText("Save").assertIsDisplayed()

@@ -49,6 +49,7 @@ fun FeedScreen(
     onAdd: () -> Unit,
     onDropShared: (Drop) -> Unit = {},
     onNotUseful: (Drop) -> Unit = {},
+    onCategory: (String) -> Unit = {},
 ) {
     LazyColumn(
         modifier.fillMaxSize().background(receiptsColors.paper),
@@ -80,6 +81,7 @@ fun FeedScreen(
                     perforated = index == 0,
                     onShared = { onDropShared(drop) },
                     onNotUseful = { onNotUseful(drop) },
+                    onCategory = { drop.categoryId?.let(onCategory) },
                 )
             }
         }
@@ -88,8 +90,15 @@ fun FeedScreen(
 
 @Composable
 private fun FeedEmptyState() {
-    ReceiptPaperCard {
-        Text("No Drops yet", color = receiptsColors.ink, style = ReceiptsType.title)
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(ReceiptsRadius.small))
+            .background(receiptsColors.paper)
+            .dashedStampBorder(receiptsColors.ruleHard)
+            .padding(ReceiptsSpace.x4),
+    ) {
+        ReceiptLabel("Feed")
+        Text("No Drops yet", Modifier.padding(top = ReceiptsSpace.x2), color = receiptsColors.ink, style = ReceiptsType.title)
         Text(
             "Give it a week. Drops need something to notice.",
             Modifier.padding(top = ReceiptsSpace.x2),
@@ -136,12 +145,17 @@ private fun DropFeedCard(
     perforated: Boolean,
     onShared: () -> Unit,
     onNotUseful: () -> Unit,
+    onCategory: () -> Unit,
 ) {
     val shareState = rememberShareCaptureState(
         fileNamePrefix = "drop-${drop.key}",
         onFileCreated = onShared,
     )
     val cardColor = if (perforated) receiptsColors.paperRaised else receiptsColors.paper
+    // Only color a drop when it names a real category — that color means "this is what it's
+    // about," matching the same color you'd see for that category in Ledger/Where it went.
+    // A drop with no category stays neutral instead of getting an arbitrary decorative tint.
+    val visual = drop.categoryId?.let { categoryVisual(it) }
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(ReceiptsRadius.small)).background(cardColor)
             .border(BorderStroke(Dp.Hairline, receiptsColors.ruleHard), RoundedCornerShape(ReceiptsRadius.small)),
@@ -149,7 +163,10 @@ private fun DropFeedCard(
         Column(
             Modifier.fillMaxWidth().captureForShare(shareState).background(cardColor).padding(ReceiptsSpace.x4),
         ) {
-            ReceiptLabel(drop.kicker)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ReceiptsSpace.x2)) {
+                if (visual != null) ReceiptCategoryMark(drop.categoryId)
+                ReceiptLabel(drop.kicker, color = visual?.color ?: receiptsColors.fade)
+            }
             Text(
                 drop.figure,
                 Modifier.padding(top = ReceiptsSpace.x3),
@@ -163,24 +180,33 @@ private fun DropFeedCard(
             else ReceiptDivider(Modifier.padding(vertical = ReceiptsSpace.x2))
             ReceiptLabel("Receipts")
         }
-        Row(
+        Column(
             Modifier.fillMaxWidth().padding(start = ReceiptsSpace.x4, end = ReceiptsSpace.x4, bottom = ReceiptsSpace.x4),
-            horizontalArrangement = Arrangement.spacedBy(ReceiptsSpace.x2),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(ReceiptsSpace.x2),
         ) {
-            FeedAction(
-                text = "Share",
-                description = "Share ${drop.kicker}",
-                modifier = Modifier.weight(1f),
-                onClick = shareState::share,
-            )
-            FeedAction(
-                text = "Not useful",
-                description = "Mark ${drop.kicker} as not useful",
-                modifier = Modifier.weight(1f),
-                quiet = true,
-                onClick = onNotUseful,
-            )
+            if (drop.categoryId != null) {
+                FeedAction(
+                    text = "See ${categoryName(drop.categoryId)} transactions",
+                    description = "See ${categoryName(drop.categoryId)} transactions",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onCategory,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(ReceiptsSpace.x2), verticalAlignment = Alignment.CenterVertically) {
+                FeedAction(
+                    text = "Share",
+                    description = "Share ${drop.kicker}",
+                    modifier = Modifier.weight(1f),
+                    onClick = shareState::share,
+                )
+                FeedAction(
+                    text = "Not useful",
+                    description = "Mark ${drop.kicker} as not useful",
+                    modifier = Modifier.weight(1f),
+                    quiet = true,
+                    onClick = onNotUseful,
+                )
+            }
         }
     }
 }

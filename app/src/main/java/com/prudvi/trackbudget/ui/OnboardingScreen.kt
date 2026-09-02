@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,9 +18,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,202 +32,218 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.prudvi.trackbudget.model.AppMode
+import androidx.compose.ui.unit.sp
 import com.prudvi.trackbudget.model.Budget
-import com.prudvi.trackbudget.model.Goal
 import com.prudvi.trackbudget.model.MoneyRhythm
 import com.prudvi.trackbudget.model.ReceiptsPreferences
-import java.util.UUID
 
 @Composable
 fun OnboardingScreen(
     smsGranted: Boolean,
     onRequestSms: () -> Unit,
-    onFinish: (ReceiptsPreferences, Budget, Goal?) -> Unit,
+    onFinish: (ReceiptsPreferences, Budget) -> Unit,
     modifier: Modifier = Modifier,
     initialPreferences: ReceiptsPreferences = ReceiptsPreferences(),
     initialBudget: Budget = Budget(),
-    scanning: Boolean = false,
-    importedCount: Int? = null,
 ) {
-    var mode by rememberSaveable { mutableStateOf(initialPreferences.mode) }
-    var rhythm by rememberSaveable { mutableStateOf(initialPreferences.rhythm) }
-    var paceAmount by rememberSaveable { mutableStateOf((initialBudget.amountMinor / 100).toString()) }
-    var goalName by rememberSaveable { mutableStateOf("") }
-    var goalTarget by rememberSaveable { mutableStateOf("") }
-    val amountIsValid = mode == AppMode.PACE && decimalToMinor(paceAmount) > 0
-    val goalIsValid = mode == AppMode.STACK && goalName.isNotBlank() && decimalToMinor(goalTarget) > 0
-    val canFinish = when (mode) {
-        AppMode.CHILL -> true
-        AppMode.PACE -> amountIsValid
-        AppMode.STACK -> goalIsValid
+    var rhythm by rememberSaveable { mutableStateOf(if (initialPreferences.rhythm == MoneyRhythm.WEEKLY) MoneyRhythm.WEEKLY else MoneyRhythm.MONTHLY) }
+    var resetDay by rememberSaveable { mutableStateOf(initialPreferences.resetDay.coerceIn(1, if (rhythm == MoneyRhythm.WEEKLY) 7 else 28)) }
+    var budgetEnabled by rememberSaveable { mutableStateOf(true) }
+    var budgetMinor by rememberSaveable {
+        mutableStateOf(
+            initialBudget.amountMinor.takeIf { it > 0L } ?: if (initialPreferences.rhythm == MoneyRhythm.WEEKLY) 250_000L else 800_000L,
+        )
     }
+    var smsWanted by rememberSaveable { mutableStateOf(initialPreferences.smsTrackingEnabled && smsGranted) }
 
     LazyColumn(
         modifier.fillMaxSize().background(receiptsColors.paper).imePadding(),
         contentPadding = PaddingValues(
-            start = ReceiptsSpace.screen,
-            end = ReceiptsSpace.screen,
-            top = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding() + ReceiptsSpace.x6,
-            bottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding() + ReceiptsSpace.x8,
+            start = 20.dp,
+            end = 20.dp,
+            top = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding() + 24.dp,
+            bottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding() + 24.dp,
         ),
-        verticalArrangement = Arrangement.spacedBy(ReceiptsSpace.x4),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         item {
-            Text("RECEIPTS", color = receiptsColors.ink, style = ReceiptsType.label)
-            Spacer(Modifier.height(ReceiptsSpace.x3))
-            Text("Start with manual entry. Add SMS later if it helps.", color = receiptsColors.ink, style = ReceiptsType.display)
+            ReceiptLabel("RECEIPTS", color = receiptsColors.ink)
+            Text(
+                "Start with manual entry. Add SMS later if it helps.",
+                color = receiptsColors.ink,
+                style = ReceiptsType.display,
+                modifier = Modifier.padding(top = 14.dp),
+            )
         }
         item {
-            PreferenceGroup("How should Receipts feel?") {
-                ModeOption(AppMode.CHILL, "Chill", "Shows what happened. No pace rail.", mode) { mode = it }
-                ModeOption(AppMode.PACE, "Pace", "Shows budget pace and category limits.", mode) { mode = it }
-                ModeOption(AppMode.STACK, "Stack", "Keeps one saving goal in front.", mode) { mode = it }
+            ReceiptLabel("How do you want to track?", modifier = Modifier.padding(top = 22.dp))
+            Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                PeriodOption(
+                    name = "Monthly",
+                    blurb = "Resets on a day you pick each month.",
+                    selected = rhythm == MoneyRhythm.MONTHLY,
+                ) {
+                    rhythm = MoneyRhythm.MONTHLY
+                    resetDay = resetDay.coerceIn(1, 28)
+                    if (initialBudget.amountMinor == 0L) budgetMinor = 800_000L
+                }
+                PeriodOption(
+                    name = "Weekly",
+                    blurb = "Resets on a weekday you pick.",
+                    selected = rhythm == MoneyRhythm.WEEKLY,
+                ) {
+                    rhythm = MoneyRhythm.WEEKLY
+                    resetDay = resetDay.coerceIn(1, 7)
+                    if (initialBudget.amountMinor == 0L) budgetMinor = 250_000L
+                }
             }
         }
         item {
-            PreferenceGroup("What rhythm should it use?") {
-                RhythmOption(MoneyRhythm.MONTHLY, "Monthly", "Calendar-style month.", rhythm) { rhythm = it }
-                RhythmOption(MoneyRhythm.WEEKLY, "Weekly", "Monday through Sunday.", rhythm) { rhythm = it }
-                RhythmOption(MoneyRhythm.ROLLING, "Irregular", "Rolling 30-day view.", rhythm) { rhythm = it }
-            }
-        }
-        item {
-            when (mode) {
-                AppMode.CHILL -> ReceiptCard {
-                    Column(verticalArrangement = Arrangement.spacedBy(ReceiptsSpace.x2)) {
-                        ReceiptLabel("Setup")
-                        Text("No budget needed for Chill. You can add one later in Settings.", color = receiptsColors.inkSoft, style = ReceiptsType.body)
-                    }
-                }
-                AppMode.PACE -> ReceiptCard {
-                    Column(verticalArrangement = Arrangement.spacedBy(ReceiptsSpace.x3)) {
-                        ReceiptLabel("Budget")
-                        ReceiptTextField(
-                            value = paceAmount,
-                            onValueChange = { paceAmount = it.filter(Char::isDigit).take(10) },
-                            placeholder = "Monthly budget in rupees",
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        )
-                        Text("This sets the pace rail and daily hold number.", color = receiptsColors.fade, style = ReceiptsType.meta)
-                    }
-                }
-                AppMode.STACK -> ReceiptCard {
-                    Column(verticalArrangement = Arrangement.spacedBy(ReceiptsSpace.x3)) {
-                        ReceiptLabel("First goal")
-                        ReceiptTextField(goalName, { goalName = it.take(40) }, "Goal name")
-                        ReceiptTextField(
-                            value = goalTarget,
-                            onValueChange = { goalTarget = it.filter(Char::isDigit).take(10) },
-                            placeholder = "Target amount in rupees",
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        )
-                        Text("Receipts will show this goal on Today.", color = receiptsColors.fade, style = ReceiptsType.meta)
+            ReceiptCard(Modifier.fillMaxWidth().padding(top = 14.dp), background = receiptsColors.cyan, radius = ReceiptsRadius.large) {
+                Column {
+                    ReceiptLabel("Budget", color = ColorCyanLabel)
+                    Text("Optional — add it now or later in Settings.", color = receiptsColors.inkSoft, style = ReceiptsType.body, modifier = Modifier.padding(top = 5.dp))
+                    Row(Modifier.fillMaxWidth().padding(top = 11.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        BudgetPick(
+                            text = "${receiptMoney(budgetMinor)} / ${if (rhythm == MoneyRhythm.WEEKLY) "week" else "month"}",
+                            selected = budgetEnabled,
+                            modifier = Modifier.weight(1f),
+                        ) { budgetEnabled = true }
+                        BudgetPick("No budget", selected = !budgetEnabled) { budgetEnabled = false }
                     }
                 }
             }
         }
         item {
-            ReceiptCard {
-                Column(verticalArrangement = Arrangement.spacedBy(ReceiptsSpace.x3)) {
-                    ReceiptLabel("SMS import")
+            ReceiptCard(Modifier.fillMaxWidth().padding(top = 14.dp), background = receiptsColors.paper, radius = ReceiptsRadius.large) {
+                Column {
+                    ReceiptLabel("Messages")
                     Text(
-                        if (smsGranted) "SMS reading is on." else "Receipts can read payment messages on this phone. It has no network permission.",
+                        "Receipts can read payment texts on this phone. It has no network permission.",
                         color = receiptsColors.inkSoft,
                         style = ReceiptsType.body,
+                        modifier = Modifier.padding(top = 9.dp),
                     )
-                    importedCount?.let { Text("Last scan added $it receipts.", color = receiptsColors.fade, style = ReceiptsType.meta) }
-                    if (scanning) Text("Scanning inbox.", color = receiptsColors.fade, style = ReceiptsType.meta)
-                    if (smsGranted.not()) {
-                        ReceiptButton("Allow SMS reading", onRequestSms, Modifier.fillMaxWidth(), style = ReceiptButtonStyle.OUTLINE)
-                        Text("Without SMS you'll add receipts by hand. That works, it's just slower.", color = receiptsColors.fade, style = ReceiptsType.meta)
-                    }
+                    ReceiptButton(
+                        "Allow reading texts",
+                        {
+                            smsWanted = true
+                            if (!smsGranted) onRequestSms()
+                        },
+                        Modifier.fillMaxWidth().padding(top = 16.dp),
+                        style = ReceiptButtonStyle.ULTRAMARINE,
+                        textStyle = ReceiptsType.button.copy(fontSize = 14.sp),
+                    )
                 }
             }
         }
         item {
             ReceiptButton(
-                text = "Start",
+                text = "Start tracking",
                 onClick = {
-                    val preferences = initialPreferences.copy(mode = mode, rhythm = rhythm)
+                    val cleanRhythm = if (rhythm == MoneyRhythm.WEEKLY) MoneyRhythm.WEEKLY else MoneyRhythm.MONTHLY
+                    val preferences = initialPreferences.copy(
+                        rhythm = cleanRhythm,
+                        resetDay = resetDay.coerceIn(if (cleanRhythm == MoneyRhythm.WEEKLY) 1..7 else 1..28),
+                        smsTrackingEnabled = smsWanted,
+                    )
                     val budget = initialBudget.copy(
-                        amountMinor = if (mode == AppMode.PACE) decimalToMinor(paceAmount) else initialBudget.amountMinor,
-                        period = rhythm.budgetPeriod(),
-                        resetDay = preferences.resetDay.coerceIn(1, 28),
+                        amountMinor = if (budgetEnabled) budgetMinor else 0L,
+                        period = if (cleanRhythm == MoneyRhythm.WEEKLY) "Week" else "Month",
+                        resetDay = preferences.resetDay,
+                        repeats = true,
+                        carryOver = false,
                         startEpochDay = null,
                         endEpochDay = null,
+                        categoryLimits = emptyMap(),
                     )
-                    val target = decimalToMinor(goalTarget)
-                    val goal = if (mode == AppMode.STACK && goalName.isNotBlank() && target > 0) {
-                        Goal(UUID.randomUUID().toString(), goalName.trim(), target)
-                    } else null
-                    onFinish(preferences, budget, goal)
+                    onFinish(preferences, budget)
                 },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = canFinish,
-                style = ReceiptButtonStyle.INK,
+                modifier = Modifier.fillMaxWidth().padding(top = 30.dp, bottom = 6.dp),
+                style = ReceiptButtonStyle.CHROME,
             )
         }
     }
 }
 
+private val ColorCyanLabel: androidx.compose.ui.graphics.Color
+    @Composable get() = if (receiptsColors.monochrome) receiptsColors.ink else androidx.compose.ui.graphics.Color(0xFF0E7C86)
+
 @Composable
-private fun PreferenceGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(ReceiptsSpace.x2)) {
-        Text(title, color = receiptsColors.ink, style = ReceiptsType.heading)
-        content()
+private fun PeriodOption(name: String, blurb: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().defaultMinSize(minHeight = 64.dp)
+            .then(if (selected) Modifier.mockShadow(ReceiptsRadius.card, 3.dp, 3.dp, receiptsColors.ink) else Modifier)
+            .clip(RoundedCornerShape(ReceiptsRadius.card))
+            .background(if (selected) receiptsColors.yellow else receiptsColors.paper)
+            .border(ReceiptsStroke.width, receiptsColors.ink, RoundedCornerShape(ReceiptsRadius.card))
+            .clickable(role = Role.RadioButton, onClick = onClick)
+            .semantics { this.selected = selected; contentDescription = "$name. $blurb" }
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(name, color = if (selected) receiptsColors.chromeOn else receiptsColors.ink, style = ReceiptsType.bodyStrong.copy(fontSize = 13.5.sp))
+            Text(blurb, color = if (selected) receiptsColors.chromeOn else receiptsColors.inkSoft, style = ReceiptsType.meta, modifier = Modifier.padding(top = 2.dp))
+        }
+        Box(
+            Modifier.size(18.dp)
+                .clip(RoundedCornerShape(ReceiptsRadius.pill))
+                .background(if (selected) receiptsColors.pink else receiptsColors.paper)
+                .border(ReceiptsStroke.width, receiptsColors.ink, RoundedCornerShape(ReceiptsRadius.pill)),
+        )
     }
 }
 
 @Composable
-private fun ModeOption(mode: AppMode, title: String, body: String, selected: AppMode, onSelect: (AppMode) -> Unit) {
-    PreferenceOption(title, body, selected == mode) { onSelect(mode) }
-}
-
-@Composable
-private fun RhythmOption(rhythm: MoneyRhythm, title: String, body: String, selected: MoneyRhythm, onSelect: (MoneyRhythm) -> Unit) {
-    PreferenceOption(title, body, selected == rhythm) { onSelect(rhythm) }
-}
-
-@Composable
-private fun PreferenceOption(title: String, body: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().defaultMinSize(minHeight = ReceiptsSpace.x12)
-            .clip(RoundedCornerShape(ReceiptsRadius.small))
-            .background(if (selected) receiptsColors.ultramarineTint else receiptsColors.paperRaised)
-            .border(1.dp, if (selected) receiptsColors.ultramarine else receiptsColors.rule, RoundedCornerShape(ReceiptsRadius.small))
+private fun BudgetPick(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.defaultMinSize(minHeight = 44.dp)
+            .clip(RoundedCornerShape(ReceiptsRadius.medium))
+            .background(if (selected) receiptsColors.yellow else receiptsColors.paper)
+            .border(ReceiptsStroke.width, receiptsColors.ink, RoundedCornerShape(ReceiptsRadius.medium))
             .clickable(role = Role.RadioButton, onClick = onClick)
-            .semantics {
-                role = Role.RadioButton
-                this.selected = selected
-                contentDescription = "$title. $body"
-            }
-            .padding(ReceiptsSpace.x3),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ReceiptsSpace.x3),
+            .semantics { this.selected = selected; contentDescription = text }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, color = if (selected) receiptsColors.chromeOn else receiptsColors.inkSoft, style = if (text.startsWith("₹")) ReceiptsType.amount.copy(fontSize = 13.sp) else ReceiptsType.bodyStrong.copy(fontSize = 12.sp), maxLines = 1) }
+}
+
+@Composable
+private fun NumericStepper(label: String, value: String, onStep: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(label, Modifier.weight(1f), color = receiptsColors.inkSoft, style = ReceiptsType.bodyStrong.copy(fontSize = 12.sp))
+        StepBox("−", "Decrease $label") { onStep(-1) }
+        Text(value, color = receiptsColors.ink, style = ReceiptsType.amount.copy(fontSize = 13.sp), modifier = Modifier.padding(horizontal = 4.dp))
+        StepBox("+", "Increase $label") { onStep(1) }
+    }
+}
+
+@Composable
+private fun WeekdayStepper(selected: Int, onSelected: (Int) -> Unit) {
+    val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    NumericStepper("Week starts", days[(selected - 1).coerceIn(0, 6)]) { delta ->
+        val next = ((selected - 1 + delta + 7) % 7) + 1
+        onSelected(next)
+    }
+}
+
+@Composable
+private fun StepBox(text: String, description: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(48.dp).clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
     ) {
         Box(
-            Modifier.defaultMinSize(minWidth = ReceiptsSpace.x6, minHeight = ReceiptsSpace.x6)
-                .clip(RoundedCornerShape(ReceiptsRadius.pill))
-                .background(if (selected) receiptsColors.ultramarine else receiptsColors.sunk),
+            Modifier.size(28.dp)
+                .clip(RoundedCornerShape(ReceiptsRadius.small))
+                .background(receiptsColors.paper)
+                .border(ReceiptsStroke.width, receiptsColors.ink, RoundedCornerShape(ReceiptsRadius.small)),
             contentAlignment = Alignment.Center,
-        ) {
-            if (selected) Text("ON", color = receiptsColors.ultramarineOn, style = ReceiptsType.label)
-        }
-        Column(Modifier.weight(1f)) {
-            Text(title, color = receiptsColors.ink, style = ReceiptsType.bodyStrong)
-            Text(body, color = receiptsColors.fade, style = ReceiptsType.meta)
-        }
+        ) { Text(text, color = receiptsColors.ink, style = ReceiptsType.heading.copy(fontSize = 14.sp)) }
     }
-}
-
-private fun MoneyRhythm.budgetPeriod(): String = when (this) {
-    MoneyRhythm.MONTHLY -> "Month"
-    MoneyRhythm.WEEKLY -> "Week"
-    MoneyRhythm.ROLLING -> "Rolling"
 }

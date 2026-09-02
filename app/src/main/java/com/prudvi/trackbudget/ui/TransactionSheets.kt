@@ -158,9 +158,11 @@ fun CategoryDetailScreen(
     val range = budgetRange(budget)
     val zone = ZoneId.systemDefault()
     val items = remember(categoryId, transactions, budget) {
+        val categoryDebitIds = transactions.filter { it.direction == Direction.DEBIT && it.categoryId == categoryId }.mapTo(mutableSetOf()) { it.id }
         transactions.filter { item ->
             val date = Instant.ofEpochMilli(item.occurredAt).atZone(zone).toLocalDate()
-            item.categoryId == categoryId && item.status == TransactionStatus.CONFIRMED && date >= range.start && date <= range.endInclusive
+            val belongsToCategory = item.categoryId == categoryId || item.direction == Direction.CREDIT && item.refundOfId in categoryDebitIds
+            belongsToCategory && item.status in CategoryDetailStatuses && date >= range.start && date <= range.endInclusive
         }
     }
     val limitStatus = remember(transactions, budget, categoryId) { categoryLimitStatuses(transactions, budget).firstOrNull { it.categoryId == categoryId } }
@@ -176,7 +178,11 @@ fun CategoryDetailScreen(
         ReceiptCard {
             Column(verticalArrangement = Arrangement.spacedBy(ReceiptsSpace.x3)) {
                 ReceiptLabel("Total")
-                Text(receiptMoney(total), color = receiptsColors.ink, style = ReceiptsType.display)
+                Text(
+                    if (total < 0L) "−${receiptMoney(kotlin.math.abs(total))}" else receiptMoney(total),
+                    color = if (total < 0L) receiptsColors.ultramarine else receiptsColors.ink,
+                    style = ReceiptsType.display,
+                )
                 if (limitStatus != null) CategoryLimitMeter(limitStatus.level, limitStatus.spentMinor, limitStatus.limitMinor, limitStatus.remainingMinor, limitStatus.fraction)
             }
         }
@@ -305,7 +311,13 @@ private fun DeleteConfirmCard(onCancel: () -> Unit, onDelete: () -> Unit) {
     }
 }
 
-private fun editableCategories(direction: Direction): List<Category> = if (direction == Direction.DEBIT) Categories.filter { it.id != "income" } else Categories.filter { it.notSpending }
+private fun editableCategories(direction: Direction): List<Category> = if (direction == Direction.DEBIT) {
+    Categories.filter { it.id !in setOf("income", "refund", "repayments") }
+} else {
+    Categories.filter { it.id in setOf("income", "refund", "transfers") }
+}
+
+private val CategoryDetailStatuses = setOf(TransactionStatus.CONFIRMED, TransactionStatus.CATEGORY_REVIEW)
 
 private fun minorToEditable(minor: Long): String {
     val rupees = minor / 100

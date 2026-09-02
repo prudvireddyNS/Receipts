@@ -9,15 +9,21 @@ import java.util.Locale
 enum class AppMode { CHILL, PACE, STACK }
 enum class MoneyRhythm { MONTHLY, WEEKLY, ROLLING }
 enum class AppAmplitude { LOUD, QUIET }
-enum class AppThemePreference { LIGHT, DARK, SYSTEM }
+enum class AppThemePreference { COLORFUL, SUBTLE, LIGHT, DARK }
 
 data class ReceiptsPreferences(
     val mode: AppMode = AppMode.CHILL,
     val rhythm: MoneyRhythm = MoneyRhythm.MONTHLY,
     val amplitude: AppAmplitude = AppAmplitude.LOUD,
     val resetDay: Int = 1,
-    val theme: AppThemePreference = AppThemePreference.LIGHT,
+    val theme: AppThemePreference = AppThemePreference.COLORFUL,
+    val smsTrackingEnabled: Boolean = false,
+    val countInvestmentsAsSpending: Boolean = false,
+    val biometricLockEnabled: Boolean = false,
+    val committedCategoryIds: Set<String> = DefaultCommittedCategoryIds,
 )
+
+val DefaultCommittedCategoryIds: Set<String> = setOf("rent", "subscription", "bills", "insurance")
 
 data class Goal(
     val id: String,
@@ -57,11 +63,10 @@ data class PeriodSnapshot(
 
 fun Budget.withRhythm(rhythm: MoneyRhythm, resetDay: Int = this.resetDay): Budget = copy(
     period = when (rhythm) {
-        MoneyRhythm.MONTHLY -> "Month"
         MoneyRhythm.WEEKLY -> "Week"
-        MoneyRhythm.ROLLING -> "Rolling"
+        MoneyRhythm.MONTHLY, MoneyRhythm.ROLLING -> "Month"
     },
-    resetDay = resetDay.coerceIn(1, 28),
+    resetDay = resetDay.coerceIn(if (rhythm == MoneyRhythm.WEEKLY) 1..7 else 1..28),
 )
 
 fun periodKey(range: BudgetRange): String {

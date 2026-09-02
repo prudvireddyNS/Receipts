@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -43,11 +45,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +66,7 @@ private sealed interface GoalOverlay {
     data object AddGoal : GoalOverlay
     data class AddProgress(val goal: Goal) : GoalOverlay
     data class Delete(val goal: Goal) : GoalOverlay
+    data class StampInfo(val stamp: StampDefinition, val earned: Boolean) : GoalOverlay
 }
 
 @Composable
@@ -100,7 +105,12 @@ fun GoalsScreen(
                 }
             }
             if (goals.isEmpty()) {
-                item { ReceiptEmptyState("Nothing saved for yet. What are you after?", "Add a target and the ticket starts filling.") }
+                item {
+                    ReceiptEmptyState(
+                        "Nothing saved for yet. What are you after?",
+                        "Save toward something specific — add a target and this fills in like a ticket, a little at a time.",
+                    )
+                }
             } else {
                 itemsIndexed(goals, key = { _, goal -> goal.id }) { index, goal ->
                     GoalTicketStub(
@@ -113,7 +123,7 @@ fun GoalsScreen(
             }
             item {
                 ReceiptDivider(Modifier.padding(top = ReceiptsSpace.x2))
-                StampsGrid(earnedStamps, receiptCount)
+                StampsGrid(earnedStamps, receiptCount) { stamp, earned -> overlay = GoalOverlay.StampInfo(stamp, earned) }
             }
         }
 
@@ -130,6 +140,7 @@ fun GoalsScreen(
                 onDeleteGoal(current.goal.id)
                 overlay = null
             }
+            is GoalOverlay.StampInfo -> StampInfoOverlay(current.stamp, current.earned, onClose = { overlay = null })
             null -> Unit
         }
     }
@@ -208,7 +219,7 @@ private fun GoalProgressRail(progress: Float, description: String, modifier: Mod
 }
 
 @Composable
-private fun StampsGrid(earnedStamps: List<EarnedStamp>, receiptCount: Int) {
+private fun StampsGrid(earnedStamps: List<EarnedStamp>, receiptCount: Int, onStampClick: (StampDefinition, Boolean) -> Unit) {
     val earnedIds = earnedStamps.mapTo(mutableSetOf()) { it.id }
     Column(Modifier.fillMaxWidth().padding(top = ReceiptsSpace.x4), verticalArrangement = Arrangement.spacedBy(ReceiptsSpace.x3)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -216,13 +227,12 @@ private fun StampsGrid(earnedStamps: List<EarnedStamp>, receiptCount: Int) {
             ReceiptLabel("${StampEngine.definitions.count { it.id in earnedIds }} / ${StampEngine.definitions.size}")
         }
         Text("$receiptCount receipts collected", color = receiptsColors.fade, style = ReceiptsType.meta)
-        if (earnedIds.isEmpty()) {
-            Text("24 to collect. You'll get them by living your life.", color = receiptsColors.fade, style = ReceiptsType.meta)
-        }
+        Text("Tap a stamp to see what it's for.", color = receiptsColors.fade, style = ReceiptsType.meta)
         StampEngine.definitions.chunked(3).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ReceiptsSpace.x2)) {
                 row.forEach { stamp ->
-                    StampFace(stamp, earned = stamp.id in earnedIds, modifier = Modifier.weight(1f))
+                    val earned = stamp.id in earnedIds
+                    StampFace(stamp, earned = earned, modifier = Modifier.weight(1f), onClick = { onStampClick(stamp, earned) })
                 }
                 repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
             }
@@ -231,7 +241,7 @@ private fun StampsGrid(earnedStamps: List<EarnedStamp>, receiptCount: Int) {
 }
 
 @Composable
-fun StampFace(stamp: StampDefinition, earned: Boolean, modifier: Modifier = Modifier, large: Boolean = false) {
+fun StampFace(stamp: StampDefinition, earned: Boolean, modifier: Modifier = Modifier, large: Boolean = false, onClick: (() -> Unit)? = null) {
     val borderColor = if (earned) receiptsColors.chilli else receiptsColors.ruleHard
     val textColor = if (earned) receiptsColors.chilli else receiptsColors.fade
     val shape = RoundedCornerShape(ReceiptsRadius.small)
@@ -241,6 +251,7 @@ fun StampFace(stamp: StampDefinition, earned: Boolean, modifier: Modifier = Modi
             .clip(shape)
             .background(receiptsColors.paper)
             .then(if (earned) Modifier.border(1.5.dp, borderColor, shape) else Modifier.dashedStampBorder(borderColor))
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .padding(ReceiptsSpace.x2)
             .semantics {
                 contentDescription = if (earned) {
@@ -252,8 +263,25 @@ fun StampFace(stamp: StampDefinition, earned: Boolean, modifier: Modifier = Modi
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(stamp.title.replace(' ', '\n'), color = textColor, style = ReceiptsType.stamp, textAlign = TextAlign.Center, maxLines = if (large) 4 else 3, overflow = TextOverflow.Ellipsis)
-        if (large) Text(stamp.description, color = textColor, style = ReceiptsType.label, textAlign = TextAlign.Center)
+        val centeredLineHeight = LineHeightStyle(alignment = LineHeightStyle.Alignment.Center, trim = LineHeightStyle.Trim.Both)
+        Text(
+            stamp.title.replace(' ', '\n'),
+            Modifier.offset(x = centeredTrackingOffset(ReceiptsType.stamp.letterSpacing)),
+            color = textColor,
+            style = ReceiptsType.stamp.copy(lineHeightStyle = centeredLineHeight),
+            textAlign = TextAlign.Center,
+            maxLines = if (large) 4 else 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (large) {
+            Text(
+                stamp.description,
+                Modifier.offset(x = centeredTrackingOffset(ReceiptsType.label.letterSpacing)),
+                color = textColor,
+                style = ReceiptsType.label.copy(lineHeightStyle = centeredLineHeight),
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 
@@ -304,6 +332,18 @@ private fun DeleteGoalOverlay(goal: Goal, onClose: () -> Unit, onDelete: () -> U
 }
 
 @Composable
+private fun StampInfoOverlay(stamp: StampDefinition, earned: Boolean, onClose: () -> Unit) {
+    GoalFormOverlay(stamp.title, onClose) {
+        StampFace(stamp, earned = earned, modifier = Modifier.fillMaxWidth(), large = true)
+        Text(
+            if (earned) "Earned" else "Not yet — keep going",
+            color = if (earned) receiptsColors.chilli else receiptsColors.fade,
+            style = ReceiptsType.label,
+        )
+    }
+}
+
+@Composable
 private fun GoalFormOverlay(title: String, onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     BackHandler { onClose() }
     Box(Modifier.fillMaxSize().background(receiptsColors.scrim).imePadding(), contentAlignment = Alignment.BottomCenter) {
@@ -333,7 +373,7 @@ private fun monthlyGuidance(goal: Goal): String {
     return "${receiptMoney((remaining + months - 1) / months)}/month to make it"
 }
 
-private fun Modifier.dashedStampBorder(color: Color): Modifier = drawWithCache {
+fun Modifier.dashedStampBorder(color: Color): Modifier = drawWithCache {
     val strokeWidth = 1.5.dp.toPx()
     val dash = PathEffect.dashPathEffect(floatArrayOf(ReceiptsSpace.x1.toPx(), ReceiptsSpace.x1.toPx()))
     val corner = CornerRadius(ReceiptsRadius.small.toPx())

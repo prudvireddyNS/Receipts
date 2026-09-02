@@ -6,6 +6,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
+import java.time.ZoneId
 
 class SmsParserTest {
     private val now = 1_776_000_000_000L
@@ -23,6 +25,21 @@ class SmsParserTest {
         assertEquals(Direction.DEBIT, result.direction)
         assertEquals("2771", result.accountTail)
         assertEquals("097093697099", result.refId)
+    }
+
+    @Test
+    fun usesTransactionDateFromMessageWhenPresent() {
+        val result = SmsParser.parse(
+            "HDFCBK",
+            "Rs 200.00 debited from a/c XX1234 to Blinkit on 31-01-26 Ref 452312345678.",
+            now,
+        )
+
+        requireNotNull(result)
+        val date = Instant.ofEpochMilli(result.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate()
+        assertEquals(2026, date.year)
+        assertEquals(1, date.monthValue)
+        assertEquals(31, date.dayOfMonth)
     }
 
     @Test
@@ -73,6 +90,23 @@ class SmsParserTest {
         assertEquals(Direction.CREDIT, result.direction)
         assertEquals(150_000, result.amountMinor)
         assertTrue(result.merchant.contains("Sasi", ignoreCase = true))
+        assertFalse(result.isExplicitRefund)
+    }
+
+    @Test
+    fun parsesExplicitRefundAsRefundCredit() {
+        val result = SmsParser.parse(
+            "AD-HDFCBK",
+            "Refund of Rs 250.00 credited to a/c XX2771 for Amazon order Ref 334455667788.",
+            now,
+        )
+
+        requireNotNull(result)
+        assertEquals(Direction.CREDIT, result.direction)
+        assertEquals(25_000, result.amountMinor)
+        assertEquals("refund", result.suggestedCategoryId)
+        assertTrue(result.isExplicitRefund)
+        assertEquals(now, result.occurredAt)
     }
 
     @Test
@@ -92,25 +126,59 @@ class SmsParserTest {
     }
 
     @Test
-    fun rejectsCardRepaymentConfirmation() {
-        assertNull(
-            SmsParser.parse(
-                "slice",
-                "Repayment of Rs.1,000 received for the slice credit card. The amount has been credited.",
-                now,
-            ),
+    fun storesCardRepaymentConfirmationAsExcludedWhenParseable() {
+        val result = SmsParser.parse(
+            "slice",
+            "Repayment of Rs.1,000 received for the slice credit card. The amount has been credited.",
+            now,
         )
+
+        requireNotNull(result)
+        assertEquals(Direction.CREDIT, result.direction)
+        assertTrue(result.excludeByDefault)
+        assertEquals("repayments", result.suggestedCategoryId)
     }
 
     @Test
-    fun rejectsCardBillDebit() {
-        assertNull(
-            SmsParser.parse(
-                "HDFCBK",
-                "Your credit card bill payment of Rs 12,000 was debited from a/c XX1234.",
-                now,
-            ),
+    fun cardPurchaseIsNotExcludedAsBillPayment() {
+        val result = SmsParser.parse(
+            "HDFCBK",
+            "Rs 500.00 paid to SWIGGY using credit card XX1234 Ref 12345678.",
+            now,
         )
+
+        requireNotNull(result)
+        assertEquals(Direction.DEBIT, result.direction)
+        assertFalse(result.excludeByDefault)
+    }
+
+    @Test
+    fun storesCardBillDebitAsExcludedWhenParseable() {
+        val result = SmsParser.parse(
+            "HDFCBK",
+            "Your credit card bill payment of Rs 12,000 was debited from a/c XX1234.",
+            now,
+        )
+
+        requireNotNull(result)
+        assertEquals(Direction.DEBIT, result.direction)
+        assertTrue(result.excludeByDefault)
+        assertEquals("repayments", result.suggestedCategoryId)
+    }
+
+    @Test
+    fun rejectsPendingFailedDeclinedAndCancelledMessages() {
+        val messages = listOf(
+            "Payment update: transaction pending confirmation on account ending 1234, reference unavailable.",
+            "Transaction of Rs 500 failed at SWIGGY.",
+            "Rs 500 payment declined at SWIGGY.",
+            "Your payment of Rs 500 to SWIGGY was cancelled.",
+        )
+
+        messages.forEach {
+            assertFalse(SmsParser.isPaymentCandidate("HDFCBK", it))
+            assertNull(SmsParser.parse("HDFCBK", it, now))
+        }
     }
 
     @Test
@@ -125,23 +193,6 @@ class SmsParserTest {
     }
 
     @Test
-    fun identifiesPaymentLikeMessageThatCannotBeParsed() {
-        assertTrue(
-            SmsParser.isPaymentCandidate(
-                "HDFCBK",
-                "Payment update: transaction pending confirmation on account ending 1234, reference unavailable.",
-            ),
-        )
-        assertNull(
-            SmsParser.parse(
-                "HDFCBK",
-                "Payment update: transaction pending confirmation on account ending 1234, reference unavailable.",
-                now,
-            ),
-        )
-    }
-
-    @Test
     fun serviceAndMarketingMessagesAreNotPaymentCandidates() {
         val messages = listOf(
             "Make bill payments, shop for vouchers, book EMIs, increase your credit limit on the SBI Card app.",
@@ -149,12 +200,17 @@ class SmsParserTest {
             "Your HDFC Bank Credit Card was returned due to an incorrect address.",
         )
 
-        messages.forEach { assertFalse(SmsParser.isPaymentCandidate("HDFCBK", it)) }
+        messages.forEach { message -> assertFalse(message, SmsParser.isPaymentCandidate("HDFCBK", message)) }
     }
 
     @Test
     fun rejectsPersonalPhoneNumberSender() {
         assertNull(SmsParser.parse("9876543210", "Rs 500 paid to Alex Ref 12345678", now))
+    }
+
+    @Test
+    fun rejectsNonInrTransactions() {
+        assertNull(SmsParser.parse("HDFCBK", "USD 10.00 debited from card XX1234 at STORE.", now))
     }
 
     @Test

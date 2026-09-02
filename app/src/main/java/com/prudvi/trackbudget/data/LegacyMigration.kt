@@ -92,10 +92,19 @@ internal fun migrateLegacyData(
                     val sender = cursor.getString("source_identifier")
                     val body = cursor.getString("raw_content")
                     val parsed = SmsParser.parse(sender, body, cursor.getLong("occurred_at")) ?: continue
-                    val categoryId = if (parsed.direction == Direction.DEBIT) legacySeedCategory(parsed.merchant) else null
+                    val inferred = if (parsed.direction == Direction.DEBIT) parsed.suggestedCategoryId ?: legacySeedCategory(parsed.merchant) else null
+                    val needsCategoryReview = parsed.direction == Direction.DEBIT && (inferred == null || parsed.confidence < 0.75f)
+                    val categoryId = when {
+                        parsed.isExplicitRefund -> "refund"
+                        needsCategoryReview -> "misc"
+                        parsed.direction == Direction.DEBIT -> inferred ?: "misc"
+                        else -> null
+                    }
                     val status = when {
+                        parsed.excludeByDefault -> TransactionStatus.EXCLUDED
+                        parsed.isExplicitRefund -> TransactionStatus.CONFIRMED
                         parsed.direction == Direction.CREDIT -> TransactionStatus.NEEDS_RESOLUTION
-                        categoryId == null || parsed.confidence < 0.75f -> TransactionStatus.NEEDS_REVIEW
+                        needsCategoryReview -> TransactionStatus.CATEGORY_REVIEW
                         else -> TransactionStatus.CONFIRMED
                     }
                     if (

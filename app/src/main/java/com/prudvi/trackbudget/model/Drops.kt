@@ -16,6 +16,7 @@ data class Drop(
     val line: String,
     val score: Int,
     val shareable: Boolean = true,
+    val categoryId: String? = null,
 )
 
 interface DropRule {
@@ -100,7 +101,7 @@ private object CategorySpikeDrop : DropRule {
         }.maxByOrNull { it.second } ?: return null
         val name = category(spike.first)?.name ?: "A category"
         val comparison = if (spike.third >= 2f) " Roughly ${spike.third.roundToInt()}×." else ""
-        return dropWithSuffix(a, ruleKey, spike.first, "Category spike", rupees(spike.second), "$name is up ${rupees(spike.second)} on last period.$comparison", 78)
+        return dropWithSuffix(a, ruleKey, spike.first, "Category spike", rupees(spike.second), "$name is up ${rupees(spike.second)} on last period.$comparison", 78, categoryId = spike.first)
     }
 }
 
@@ -204,13 +205,14 @@ private fun drop(a: SpendingAnalytics, rule: String, kicker: String, figure: Str
     score = score.coerceIn(0, 100),
 )
 
-private fun dropWithSuffix(a: SpendingAnalytics, rule: String, suffix: String, kicker: String, figure: String, line: String, score: Int): Drop = Drop(
+private fun dropWithSuffix(a: SpendingAnalytics, rule: String, suffix: String, kicker: String, figure: String, line: String, score: Int, categoryId: String? = null): Drop = Drop(
     key = "$rule-$suffix-${periodKey(a.snapshot.range)}",
     ruleKey = rule,
     kicker = kicker,
     figure = figure,
     line = line,
     score = score.coerceIn(0, 100),
+    categoryId = categoryId,
 )
 
 private fun List<Transaction>.activeDebits(a: SpendingAnalytics): List<Transaction> = filter { item ->

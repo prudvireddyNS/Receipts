@@ -13,7 +13,7 @@ import com.prudvi.trackbudget.model.Transaction
 import com.prudvi.trackbudget.model.TransactionSource
 import com.prudvi.trackbudget.model.TransactionStatus
 
-class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.db", null, 5) {
+class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.db", null, 6) {
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         db.setForeignKeyConstraintsEnabled(true)
@@ -38,7 +38,8 @@ class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.
                 source_key TEXT,
                 refund_of_id TEXT,
                 raw_message TEXT,
-                recurring INTEGER NOT NULL DEFAULT 0
+                recurring INTEGER NOT NULL DEFAULT 0,
+                committed INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent(),
         )
@@ -101,6 +102,9 @@ class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.
         }
         if (oldVersion < 5) {
             createReceiptsTables(db)
+        }
+        if (oldVersion < 6) {
+            db.execSQL("ALTER TABLE transactions ADD COLUMN committed INTEGER NOT NULL DEFAULT 0")
         }
     }
 
@@ -179,6 +183,7 @@ class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.
                         refundOfId = cursor.stringOrNull("refund_of_id"),
                         rawMessage = cursor.stringOrNull("raw_message"),
                         recurring = cursor.getInt(cursor.getColumnIndexOrThrow("recurring")) == 1,
+                        committed = cursor.getInt(cursor.getColumnIndexOrThrow("committed")) == 1,
                     ),
                 )
             }
@@ -333,6 +338,7 @@ class TrackDatabase(context: Context) : SQLiteOpenHelper(context, "track_budget.
         put("refund_of_id", refundOfId)
         put("raw_message", rawMessage)
         put("recurring", if (recurring) 1 else 0)
+        put("committed", if (committed) 1 else 0)
     }
 
     private fun Goal.values() = ContentValues().apply {

@@ -7,7 +7,7 @@ fun findRefundCandidate(transactions: List<Transaction>, credit: Transaction): T
     val oldest = credit.occurredAt - 90L * 86_400_000L
     val candidates = transactions.filter {
         it.direction == Direction.DEBIT &&
-            it.status == TransactionStatus.CONFIRMED &&
+            it.status in setOf(TransactionStatus.CONFIRMED, TransactionStatus.CATEGORY_REVIEW) &&
             it.occurredAt in oldest..credit.occurredAt
     }
     val merchant = credit.merchant.normalizedMerchant()
