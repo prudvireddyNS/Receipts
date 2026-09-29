@@ -62,7 +62,6 @@ fun TransactionEditorOverlay(
     var merchant by rememberSaveable(transaction.id) { mutableStateOf(transaction.merchant) }
     var categoryId by rememberSaveable(transaction.id) { mutableStateOf(transaction.categoryId ?: if (transaction.direction == Direction.CREDIT) "income" else "misc") }
     var occurredAt by rememberSaveable(transaction.id) { mutableStateOf(transaction.occurredAt) }
-    var committed by rememberSaveable(transaction.id) { mutableStateOf(transaction.committed) }
     var showAllCategories by rememberSaveable(transaction.id) { mutableStateOf(false) }
     var expandedSms by rememberSaveable(transaction.id) { mutableStateOf(false) }
     var confirmDelete by rememberSaveable(transaction.id) { mutableStateOf(false) }
@@ -80,7 +79,6 @@ fun TransactionEditorOverlay(
                 categoryId = categoryId,
                 occurredAt = occurredAt,
                 status = status,
-                committed = direction == Direction.DEBIT && committed,
             ),
         )
     }
@@ -139,12 +137,6 @@ fun TransactionEditorOverlay(
                             }
                             if (!showAllCategories) Choice("More", false) { showAllCategories = true }
                             else Choice("Less", false) { showAllCategories = false }
-                        }
-                        if (direction == Direction.DEBIT) {
-                            Row(Modifier.fillMaxWidth().padding(top = ReceiptsSpace.x1), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Skip in daily pace", Modifier.weight(1f), color = receiptsColors.ink, style = ReceiptsType.bodyStrong.copy(fontSize = 12.sp))
-                                ReceiptCheckbox(committed) { committed = it }
-                            }
                         }
                     }
                 }

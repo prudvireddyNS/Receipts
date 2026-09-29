@@ -24,22 +24,21 @@ class TrackBudgetDeviceTest {
     fun primaryNavigationAndSettingsRender() {
         compose.onNodeWithText("RECEIPTS").assertIsDisplayed()
 
-        compose.onNodeWithText("HISTORY").performClick()
+        compose.onNodeWithContentDescription("History").performClick()
         compose.onNodeWithText("Search receipts").assertIsDisplayed()
 
-        compose.onNodeWithText("HOME").performClick()
+        compose.onNodeWithContentDescription("Home").performClick()
         compose.onNodeWithContentDescription("Open settings").performClick()
         compose.onNodeWithText("Settings").assertIsDisplayed()
-        compose.onNodeWithText("Network access").assertIsDisplayed()
+        compose.onNodeWithText("BUDGET & PERIOD").assertIsDisplayed()
     }
 
     @Test
     fun manualEntryOpensWithoutWritingData() {
         compose.onNodeWithContentDescription("Add receipt").performClick()
-        compose.onNodeWithText("New receipt").assertIsDisplayed()
-        compose.onNodeWithText("Spent").assertIsDisplayed()
+        compose.onNodeWithText("Add").assertIsDisplayed()
         compose.onNodeWithText("Save").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Close new receipt").performClick()
+        compose.onNodeWithContentDescription("Close add").performClick()
         compose.onNodeWithText("RECEIPTS").assertIsDisplayed()
     }
 
@@ -50,7 +49,6 @@ class TrackBudgetDeviceTest {
                     .getSharedPreferences("track_budget", Context.MODE_PRIVATE)
                     .edit()
                     .putBoolean("onboarding_complete", true)
-                    .putString("mode", "PACE")
                     .putString("theme", "LIGHT")
                     .commit()
                 base.evaluate()

@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.RemoteViews
 import com.prudvi.trackbudget.MainActivity
 import com.prudvi.trackbudget.R
+import com.prudvi.trackbudget.TrackBudgetApplication
 import com.prudvi.trackbudget.data.TrackRepository
 import com.prudvi.trackbudget.model.AppThemePreference
 import com.prudvi.trackbudget.model.DashboardSnapshot
@@ -180,7 +181,9 @@ class BudgetWidgetProvider : AppWidgetProvider() {
         // ---------------------------------------------------------------- data
 
         private fun loadData(context: Context): WidgetData {
-            val repository = TrackRepository(context)
+            // The app already holds a live repository: building another per update re-ran migration,
+            // re-read every receipt and opened a second database connection for each widget refresh.
+            val repository = (context.applicationContext as? TrackBudgetApplication)?.repository ?: TrackRepository(context)
             val transactions = repository.transactions.value
             val activeBudget = if (repository.currentPeriodBudgetConfirmed) repository.budget else repository.budget.copy(amountMinor = 0L)
             val snapshot = dashboard(transactions, activeBudget)
@@ -189,14 +192,20 @@ class BudgetWidgetProvider : AppWidgetProvider() {
             // Obligations are money that was never available, so the ceiling for the rail and for
             // "left of" is the spendable figure, not the raw budget amount.
             val ceiling = snapshot.spendableMinor
-            val hasBudget = ceiling > 0L
-            val progress = if (hasBudget) (snapshot.spentMinor.toFloat() / ceiling).coerceAtLeast(0f) else null
+            val hasBudget = activeBudget.amountMinor > 0L
+            val progress = when {
+                !hasBudget -> null
+                ceiling > 0L -> (snapshot.spentMinor.toFloat() / ceiling).coerceAtLeast(0f)
+                snapshot.spentMinor > 0L -> 1f
+                else -> 0f
+            }
             val dayFraction = snapshot.dayOfPeriod.toFloat() / snapshot.daysInPeriod.coerceAtLeast(1)
             val daysLeft = (snapshot.daysInPeriod - snapshot.dayOfPeriod + 1).coerceAtLeast(0)
             val over = snapshot.remainingMinor < 0L
 
             val sub = when {
                 !hasBudget -> "No budget set · tap to add one"
+                ceiling <= 0L -> "Fixed obligations use up the whole ${money(activeBudget.amountMinor)} budget"
                 over -> "${money(snapshot.remainingMinor)} over ${money(ceiling)}"
                 snapshot.obligationsMinor > 0L -> "${money(snapshot.remainingMinor)} left of ${money(ceiling)} after ${money(snapshot.obligationsMinor)} fixed"
                 else -> "${money(snapshot.remainingMinor)} left of ${money(ceiling)}"

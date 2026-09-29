@@ -41,7 +41,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.prudvi.trackbudget.data.TrackRepository
 import com.prudvi.trackbudget.model.Budget
+import com.prudvi.trackbudget.model.netSpend
 import com.prudvi.trackbudget.model.Direction
 import com.prudvi.trackbudget.model.Transaction
 import com.prudvi.trackbudget.model.TransactionStatus
@@ -210,7 +212,6 @@ private fun LedgerTransactionRow(
                     textDecoration = if (transaction.status == TransactionStatus.EXCLUDED) TextDecoration.LineThrough else null,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (transaction.committed) ReceiptSkipTag()
             }
             val state = when (transaction.status) {
                 TransactionStatus.EXCLUDED -> " · Excluded"
@@ -242,7 +243,7 @@ private fun ledgerItems(transactions: List<Transaction>, budget: Budget, query: 
         .filter { transaction ->
             cleanQuery.isBlank() ||
                 transaction.merchant.contains(cleanQuery, ignoreCase = true) ||
-                transaction.note.contains(cleanQuery, ignoreCase = true) ||
+                (transaction.note != TrackRepository.USER_EDITED_MARKER && transaction.note.contains(cleanQuery, ignoreCase = true)) ||
                 transaction.rawMessage.orEmpty().contains(cleanQuery, ignoreCase = true) ||
                 receiptMoney(transaction.amountMinor).contains(cleanQuery)
         }
@@ -254,13 +255,7 @@ private fun ledgerItems(transactions: List<Transaction>, budget: Budget, query: 
             // Excluded receipts never count towards a day's total — except when they're the only
             // thing on screen, where a column of blank headers would just look broken.
             val counted = if (filterId == ExcludedFilterId) rows else rows.filter { it.status in IncludedTotalStatuses }
-            val netTotal = counted.sumOf {
-                when {
-                    it.direction == Direction.CREDIT -> -it.amountMinor
-                    it.categoryId == "investment" && !budget.countInvestmentsAsSpending -> 0L
-                    else -> it.amountMinor
-                }
-            }
+            val netTotal = counted.sumOf { it.netSpend(budget.countInvestmentsAsSpending) }
             listOf<LedgerItem>(LedgerItem.Header(date, netTotal)) + rows.map { LedgerItem.Row(it) }
         }
 }

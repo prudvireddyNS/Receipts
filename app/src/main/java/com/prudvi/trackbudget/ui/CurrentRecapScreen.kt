@@ -35,7 +35,9 @@ import com.prudvi.trackbudget.model.Direction
 import com.prudvi.trackbudget.model.Transaction
 import com.prudvi.trackbudget.model.TransactionStatus
 import com.prudvi.trackbudget.model.budgetRange
+import com.prudvi.trackbudget.model.countsAsSpend
 import com.prudvi.trackbudget.model.dashboard
+import com.prudvi.trackbudget.model.netSpend
 import java.time.ZoneId
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -108,10 +110,10 @@ fun CurrentRecapScreen(
 
                 Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     RecapTile("Biggest day", recap.biggestAmount, recap.biggestDay, receiptsColors.yellow, receiptsColors.chromeOn, Modifier.weight(1f), contentColor = receiptsColors.chromeOn)
-                    RecapTile("Quiet days", recap.quietCount, "under ${recap.quietUnder}", receiptsColors.cyan, ColorCyanLabel, Modifier.weight(1f))
+                    RecapTile("Quiet days", recap.quietCount, recap.quietUnder, receiptsColors.cyan, ColorCyanLabel, Modifier.weight(1f))
                 }
 
-                ReceiptLabel("Most used", modifier = Modifier.padding(top = 18.dp))
+                ReceiptLabel("Biggest spends", modifier = Modifier.padding(top = 18.dp))
                 Column(Modifier.fillMaxWidth().padding(top = 9.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     if (recap.merchants.isEmpty()) Text("Nothing yet.", color = receiptsColors.fade, style = ReceiptsType.body)
                     recap.merchants.forEach { m -> MerchantRow(m) }
@@ -247,13 +249,7 @@ private fun buildRecap(transactions: List<Transaction>, budget: Budget): RecapDa
     val previousStartMillis = previousStart.atStartOfDay(zone).toInstant().toEpochMilli()
     val previousEndMillis = previousEndInclusive.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
     val previousNet = transactions.filter { it.status in IncludedStatuses && it.occurredAt in previousStartMillis until previousEndMillis }
-        .sumOf {
-            when {
-                it.direction == Direction.CREDIT -> -it.amountMinor
-                it.categoryId == "investment" && !budget.countInvestmentsAsSpending -> 0L
-                else -> it.amountMinor
-            }
-        }
+        .sumOf { it.netSpend(budget.countInvestmentsAsSpending) }
     val delta = snapshot.spentMinor - previousNet
     val categories = snapshot.categoryTotals.toList().filter { it.second != 0L }.sortedByDescending { abs(it.second) }.map { RecapCategory(it.first, it.second) }
     val categoryTotal = categories.filter { it.amountMinor > 0L }.sumOf { it.amountMinor }.coerceAtLeast(1L)
@@ -261,18 +257,17 @@ private fun buildRecap(transactions: List<Transaction>, budget: Budget): RecapDa
     val startMillis = snapshot.range.start.atStartOfDay(zone).toInstant().toEpochMilli()
     val endMillis = snapshot.range.endInclusive.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
     val merchants = transactions.filter {
-        it.status in IncludedStatuses && it.direction == Direction.DEBIT && it.occurredAt in startMillis until endMillis &&
-            (budget.countInvestmentsAsSpending || it.categoryId != "investment")
+        it.status in IncludedStatuses && it.countsAsSpend(budget.countInvestmentsAsSpending) && it.occurredAt in startMillis until endMillis
     }
         .groupBy { receiptMerchant(it) }
         .map { (merchant, rows) -> Triple(merchant, rows.size, rows.sumOf { it.amountMinor }) }
         .sortedByDescending { it.third }
         .mapIndexed { index, (merchant, count, amount) -> RecapMerchant(index + 1, merchant, "$count ${if (count == 1) "order" else "orders"}", amount) }
     val biggest = snapshot.dailyTotals.filterValues { it > 0L }.maxByOrNull { it.value }
-    val pace = if (snapshot.spendableMinor > 0L) snapshot.spendableMinor / snapshot.daysInPeriod.coerceAtLeast(1) else snapshot.spentMinor / elapsedDays
+    // Same rule as the Home tile: a quiet day is one with no spending at all.
     val quietCount = (0 until elapsedDays).count { offset ->
         val day = snapshot.range.start.plusDays(offset.toLong())
-        (snapshot.dailyTotals[day] ?: 0L) < pace
+        (snapshot.dailyTotals[day] ?: 0L) <= 0L
     }
     val title = if (budget.period == "Week") "This week" else "${receiptMonth(snapshot.range.start)} so far"
     return RecapData(
@@ -292,7 +287,7 @@ private fun buildRecap(transactions: List<Transaction>, budget: Budget): RecapDa
         biggestAmount = biggest?.let { receiptMoney(it.value) } ?: "₹0",
         biggestDay = biggest?.let { receiptDayDate(it.key) } ?: "None yet",
         quietCount = "$quietCount of $elapsedDays",
-        quietUnder = receiptMoney(pace),
+        quietUnder = "nothing spent",
         merchants = merchants,
     )
 }

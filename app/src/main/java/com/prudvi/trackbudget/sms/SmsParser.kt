@@ -13,20 +13,20 @@ import java.util.Locale
 
 object SmsParser {
     private val money = Regex("""(?i)(?:\b(?:inr|rs\.?)\s*|₹\s*)([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(?:\b(?:inr|rs\.?)\b|₹)""")
-    private val transactionVerb = Regex("""(?i)\b(debited|debit|spent|paid|withdrawn|withdrawal|purchase|charged|deducted|sent|transferred|credited|credit|received|deposited|refund|refunded|reversal|reversed)\b""")
+    private val transactionVerb = Regex("""(?i)\b(debited|debit(?!\s+card)|spent|paid|withdrawn|withdrawal|purchase|charged|deducted|sent|transferred|credited|credit(?!\s+card)|received|deposited|refund|refunded|reversal|reversed)\b""")
     private val debitVerb = setOf("debited", "debit", "spent", "paid", "withdrawn", "withdrawal", "purchase", "charged", "deducted", "sent", "transferred")
     private val creditVerb = setOf("credited", "credit", "received", "deposited", "refund", "refunded", "reversal", "reversed")
     private val hardNegative = Regex("""(?i)\b(otp|one[- ]time password|do not share|verification code|will be debited|is due|due on|minimum amount due|cashback offer|apply now|eligible for|pre[- ]approved|loan offer|failed|declined|unsuccessful|rejected|pending|cancelled|canceled)\b""")
     private val mandateNoise = Regex("""(?i)\b(autopay|mandate|e-mandate)\b.{0,50}\b(registration|register|created|revoke|revoked|pause|paused|will be debited|upcoming)\b|\bupcoming mandate\b""")
     private val nonInr = Regex("""(?i)(?:[${'$'}€£]|\b(?:usd|eur|gbp|aed|sgd|aud|cad)\b)""")
     private val explicitRefund = Regex("""(?i)\b(refund(?:ed)?|reversal|reversed)\b""")
-    private val selfTransfer = Regex("""(?i)\b(self transfer|own account|between your accounts|to your (?:a/c|acct|account)|from your (?:a/c|acct|account).{0,60}to your (?:a/c|acct|account))\b""")
+    private val selfTransfer = Regex("""(?i)\b(self transfer|own account|between your accounts|from your (?:a/c|acct|account).{0,60}to your (?:a/c|acct|account))\b""")
     private val atmWithdrawal = Regex("""(?i)\b(atm|cash)\b.{0,30}\b(withdrawn|withdrawal)\b|\b(withdrawn|withdrawal)\b.{0,30}\b(atm|cash)\b""")
     private val investment = Regex("""(?i)\b(mutual fund|sip|nps|zerodha|groww|upstox|demat|investment)\b""")
     private val cardRepayment = Regex("""(?i)\b(?:credit card|card bill|cc)\b.{0,80}\b(?:bill payment|payment received|repayment|payment of)\b|\b(?:bill payment|repayment)\b.{0,80}\b(?:credit card|card bill|cc)\b|\bsent from a/c\b.{0,60}\bto\s+["']?\w+\s+small fi\b""")
     private val balance = Regex("""(?i)\b(?:avl|available|clear|closing)?\s*bal(?:ance)?[^\d]{0,12}(?:inr|rs\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)""")
     private val account = Regex("""(?i)\b(?:a/c|acct|account|card|ac)\b[^\d]{0,10}(?:[xX*]+)?(\d{3,6})|\b[xX*]{2,}(\d{3,6})\b""")
-    private val reference = Regex("""(?i)\b(?:ref|rrn|utr|txn|transaction)\s*(?:no\.?|id|#)?[:\s]*([A-Za-z0-9]{6,22})\b""")
+    private val reference = Regex("""(?i)\b(?:ref|rrn|utr|txn|transaction)\s*(?:no\.?|id|#)?[:\s]*((?=[A-Za-z0-9]*\d)[A-Za-z0-9]{6,22})\b""")
     private val debitMerchantPatterns = listOf(
         Regex("""(?i)\b(?:paid\s+to|sent\s+to|transferred\s+to|trf\s+to|at|to|towards|in favour of)\s+(?:(?:upi(?:\s+id)?|vpa)\s*[:\-]?\s*)?["']?([A-Za-z0-9@._&' -]{2,64}?)(?=\s+(?:on|ref|upi|rrn|txn|utr|avl|bal|dt|date|using|via|from|a/c|acct|account)\b|[().,;]|$)"""),
         Regex("""(?i)\binfo[:\s]+([A-Za-z0-9@._&' -]{3,40})"""),
@@ -49,7 +49,7 @@ object SmsParser {
         if (senderKey(sender) == null && sender.count(Char::isDigit) !in 5..6) return false
         if (nonInr.containsMatchIn(body) || hardNegative.containsMatchIn(body) || mandateNoise.containsMatchIn(body)) return false
         val completedTransaction = Regex(
-            "(?i)\\b(debited|debit|credited|credit|received|deposited|spent|paid|withdrawn|withdrawal|purchase|charged|deducted|transferred|refund|refunded|reversal|reversed)\\b",
+            "(?i)\\b(debited|debit(?!\\s+card)|credited|credit(?!\\s+card)|received|deposited|spent|paid|withdrawn|withdrawal|purchase|charged|deducted|transferred|refund|refunded|reversal|reversed)\\b",
         )
         return completedTransaction.containsMatchIn(body) && money.containsMatchIn(body)
     }
@@ -124,7 +124,7 @@ object SmsParser {
 
     private fun shouldExcludeByDefault(body: String, direction: Direction): Boolean =
         cardRepayment.containsMatchIn(body) ||
-            selfTransfer.containsMatchIn(body) ||
+            (selfTransfer.containsMatchIn(body) && !(direction == Direction.CREDIT && explicitRefund.containsMatchIn(body))) ||
             (direction == Direction.DEBIT && atmWithdrawal.containsMatchIn(body))
 
     private fun transactionTime(body: String, receivedAt: Long): Long {

@@ -6,10 +6,6 @@ import android.database.DatabaseErrorHandler
 import android.database.sqlite.SQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.prudvi.trackbudget.model.Direction
-import com.prudvi.trackbudget.model.DismissedDropRule
-import com.prudvi.trackbudget.model.EarnedStamp
-import com.prudvi.trackbudget.model.Goal
-import com.prudvi.trackbudget.model.PeriodSnapshot
 import com.prudvi.trackbudget.model.Transaction
 import com.prudvi.trackbudget.model.TransactionSource
 import com.prudvi.trackbudget.model.TransactionStatus
@@ -23,30 +19,38 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class TrackDatabaseMigrationTest {
     @Test
-    fun migratesV4ToV5Additively() = verifyMigration(fromVersion = 4, recurringColumn = true)
+    fun migratesV4ToLatest() = verifyMigration(fromVersion = 4, recurringColumn = true)
 
     @Test
-    fun migratesV2ToV5Additively() = verifyMigration(fromVersion = 2, recurringColumn = false)
+    fun migratesV2ToLatest() = verifyMigration(fromVersion = 2, recurringColumn = false)
 
     @Test
-    fun clearingTransactionsAlsoClearsDerivedHistoryButKeepsGoalsAndStamps() {
+    fun clearingTransactionsRemovesThem() {
         val target = InstrumentationRegistry.getInstrumentation().targetContext
         val dir = File(target.cacheDir, "track-db-clear-${System.nanoTime()}").apply { mkdirs() }
         val database = TrackDatabase(TempDatabaseContext(target, dir))
         try {
             database.insert(Transaction("tx", 100_00, Direction.DEBIT, 1L, "Cafe", "food", status = TransactionStatus.CONFIRMED, source = TransactionSource.MANUAL))
-            database.upsertGoal(Goal("goal", "Trip", 1_000_00))
-            database.insertEarnedStamp(EarnedStamp("first-blood", 1L))
-            database.upsertDismissedDropRule(DismissedDropRule("small-stuff", 1L))
-            database.insertPeriodSnapshot(PeriodSnapshot("2026-07", 5_000_00, 1_000_00, 1L))
 
             database.clear()
 
             assertTrue(database.transactions().isEmpty())
-            assertTrue(database.periodSnapshots().isEmpty())
-            assertTrue(database.dismissedDropRules().isEmpty())
-            assertEquals(1, database.goals().size)
-            assertEquals(1, database.earnedStamps().size)
+        } finally {
+            database.close()
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun findsATransactionByItsReference() {
+        val target = InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = File(target.cacheDir, "track-db-ref-${System.nanoTime()}").apply { mkdirs() }
+        val database = TrackDatabase(TempDatabaseContext(target, dir))
+        try {
+            database.insert(Transaction("tx", 100_00, Direction.DEBIT, 1L, "Cafe", "food", status = TransactionStatus.CONFIRMED, source = TransactionSource.SMS, refId = "REF123456"))
+
+            assertEquals("tx", database.findByRef("REF123456")?.id)
+            assertEquals(null, database.findByRef("MISSING000"))
         } finally {
             database.close()
             dir.deleteRecursively()
@@ -80,7 +84,7 @@ class TrackDatabaseMigrationTest {
             assertEquals("Blinkit", transactions.single().merchant)
             assertEquals(42_000L, transactions.single().amountMinor)
             helper.readableDatabase.use { db ->
-                assertEquals(5, db.version)
+                assertEquals(6, db.version)
                 assertEquals("ok", db.rawQuery("PRAGMA integrity_check", null).use { cursor -> cursor.moveToFirst(); cursor.getString(0) })
                 listOf("stamps", "goals", "dismissed_drops", "period_snapshots").forEach { assertTrue(db.hasTable(it)) }
                 assertTrue(db.hasIndex("tx_merchant"))

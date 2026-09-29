@@ -13,6 +13,10 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import com.prudvi.trackbudget.data.TrackRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -47,19 +51,24 @@ class MainActivity : FragmentActivity() {
         else registerReceiver(screenOffReceiver, filter)
         screenReceiverRegistered = true
         consumeReviewIntent(intent)
-        val repository = (application as TrackBudgetApplication).repository
-        // Cheap, and the one moment we know the user is looking at fresh figures in the app while
-        // the home-screen card may still be showing yesterday's.
-        BudgetWidgetProvider.updateAll(this)
         // Keeps the locked app out of the recents preview too, not just off the screen.
-        if (repository.biometricLockEnabled) window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        applySecureFlag()
         setContent {
             val shouldOpenReview by openReview
-            if (repository.biometricLockEnabled && !unlockedForDeviceSession) {
+            // The repository is built on a background thread (see TrackBudgetApplication); until it
+            // is ready the screen is just the plain ground colour.
+            val repository by produceState<TrackRepository?>(null) {
+                value = withContext(Dispatchers.IO) { (application as TrackBudgetApplication).repository }
+                // Cheap, and the one moment we know the user is looking at fresh figures in the app
+                // while the home-screen card may still be showing yesterday's.
+                BudgetWidgetProvider.updateAll(this@MainActivity)
+            }
+            val ready = repository
+            if (ready == null || (biometricLockEnabled() && !unlockedForDeviceSession)) {
                 LockVeil()
             } else {
                 ReceiptsRoot(
-                    repository,
+                    ready,
                     openReview = shouldOpenReview,
                     initialReviewTransactionId = reviewTransactionId,
                     onReviewConsumed = {
@@ -73,7 +82,18 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+        applySecureFlag()
         maybeAuthenticate()
+    }
+
+    // Read straight from preferences: asking the repository would block the main thread on the
+    // database, and this is needed before anything can be drawn.
+    private fun biometricLockEnabled(): Boolean =
+        getSharedPreferences("track_budget", MODE_PRIVATE).getBoolean("biometric_lock_enabled", false)
+
+    private fun applySecureFlag() {
+        if (biometricLockEnabled()) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
 
     override fun onDestroy() {
@@ -97,8 +117,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun maybeAuthenticate() {
-        val repository = (application as TrackBudgetApplication).repository
-        if (!repository.biometricLockEnabled || unlockedForDeviceSession || promptShowing) return
+        if (!biometricLockEnabled() || unlockedForDeviceSession || promptShowing) return
         val authenticators = BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
         if (BiometricManager.from(this).canAuthenticate(authenticators) != BiometricManager.BIOMETRIC_SUCCESS) {
             unlockedForDeviceSession = true

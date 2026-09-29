@@ -31,6 +31,9 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -49,6 +52,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.prudvi.trackbudget.model.AppThemePreference
 import com.prudvi.trackbudget.model.Budget
+import com.prudvi.trackbudget.model.amountForPeriod
+import com.prudvi.trackbudget.model.budgetRange
+import com.prudvi.trackbudget.model.obligationsMinor
 import com.prudvi.trackbudget.model.Categories
 import com.prudvi.trackbudget.model.Commitment
 import com.prudvi.trackbudget.model.LearnedRule
@@ -78,6 +84,7 @@ fun SettingsScreen(
     onNoBudget: () -> Unit = {},
     onRerunOnboarding: () -> Unit,
     onClearAll: () -> Unit,
+    onExport: () -> Unit = {},
     modifier: Modifier = Modifier,
     widgetInstalled: Boolean = false,
     widgetPinSupported: Boolean = true,
@@ -119,11 +126,11 @@ fun SettingsScreen(
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         PeriodChip("Monthly", rhythm == MoneyRhythm.MONTHLY) {
                             onPreferencesChange(preferences.copy(rhythm = MoneyRhythm.MONTHLY, resetDay = preferences.resetDay.coerceIn(1, 28)))
-                            onBudgetChange(budget.copy(period = "Month", resetDay = budget.resetDay.coerceIn(1, 28)))
+                            onBudgetChange(budget.copy(period = "Month", resetDay = budget.resetDay.coerceIn(1, 28), amountMinor = budget.amountForPeriod("Month")))
                         }
                         PeriodChip("Weekly", rhythm == MoneyRhythm.WEEKLY) {
                             onPreferencesChange(preferences.copy(rhythm = MoneyRhythm.WEEKLY, resetDay = preferences.resetDay.coerceIn(1, 7)))
-                            onBudgetChange(budget.copy(period = "Week", resetDay = budget.resetDay.coerceIn(1, 7)))
+                            onBudgetChange(budget.copy(period = "Week", resetDay = budget.resetDay.coerceIn(1, 7), amountMinor = budget.amountForPeriod("Week")))
                         }
                     }
                     if (rhythm == MoneyRhythm.WEEKLY) {
@@ -145,19 +152,28 @@ fun SettingsScreen(
                     }
                     if (hasBudget) {
                         var budgetAmountText by rememberSaveable(hasBudget) { mutableStateOf((budget.amountMinor / 100).toString()) }
+                        // Commit once typing settles. Saving on every keystroke turned 30000 → 25000
+                        // into budgets of 3, 30, 300 and 3000 along the way, each one alerting and
+                        // re-confirming the period.
+                        val latestBudget by rememberUpdatedState(budget)
+                        LaunchedEffect(budgetAmountText) {
+                            delay(700)
+                            val minor = decimalToMinor(budgetAmountText)
+                            if (minor > 0L && minor != latestBudget.amountMinor) onBudgetChange(latestBudget.copy(amountMinor = minor))
+                        }
                         ReceiptLabel("Amount", Modifier.padding(top = 9.dp))
                         ReceiptTextField(
                             value = budgetAmountText,
                             onValueChange = { next ->
                                 budgetAmountText = sanitizeAmountText(next)
-                                val minor = decimalToMinor(budgetAmountText)
-                                if (minor > 0L) onBudgetChange(budget.copy(amountMinor = minor))
                             },
                             placeholder = "Amount in rupees",
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
                             modifier = Modifier.padding(top = 5.dp),
                         )
-                        Text("${receiptMoney(budget.amountMinor / (if (rhythm == MoneyRhythm.WEEKLY) 7 else 30))} per day at an even pace", color = receiptsColors.fade, style = ReceiptsType.meta, modifier = Modifier.padding(top = 7.dp))
+                        val perDayRange = budgetRange(budget)
+                        val perDaySpendable = (budget.amountMinor - budget.obligationsMinor(perDayRange)).coerceAtLeast(0L)
+                        Text("${receiptMoney(perDaySpendable / perDayRange.days)} per day at an even pace", color = receiptsColors.fade, style = ReceiptsType.meta, modifier = Modifier.padding(top = 7.dp))
                     }
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Investments count as spending", Modifier.weight(1f), color = receiptsColors.inkSoft, style = ReceiptsType.meta)
@@ -253,9 +269,10 @@ fun SettingsScreen(
                         }
                     } else {
                         smsAccounts.forEach { account ->
+                            val accountCount = transactions.count { it.source == TransactionSource.SMS && it.accountTail == account.accountTail && it.sender == account.sender }
                             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text("••${account.accountTail ?: "—"} · ${account.sender ?: "SMS"}", Modifier.weight(1f), color = receiptsColors.ink, style = ReceiptsType.body.copy(fontSize = 12.sp))
-                                Text(if (preferences.smsTrackingEnabled && smsLiveGranted) "$smsCount added" else "paused", color = receiptsColors.inkSoft, style = ReceiptsType.amount.copy(fontSize = 11.5.sp))
+                                Text(if (preferences.smsTrackingEnabled && smsLiveGranted) "$accountCount added" else "paused", color = receiptsColors.inkSoft, style = ReceiptsType.amount.copy(fontSize = 11.5.sp))
                             }
                         }
                     }
@@ -269,16 +286,12 @@ fun SettingsScreen(
                             }
                         }
                     }
-                    ReceiptDivider(Modifier.padding(top = 13.dp, bottom = 11.dp))
-                    Text("Skip in daily pace by default", color = receiptsColors.ink, style = ReceiptsType.bodyStrong.copy(fontSize = 12.sp))
-                    Text("These categories still count toward your budget, just not the day-by-day chart. Any transaction can override this.", color = receiptsColors.fade, style = ReceiptsType.meta, modifier = Modifier.padding(top = 3.dp, bottom = 9.dp))
-                    CommittedCategoriesPicker(preferences.committedCategoryIds) { next -> onPreferencesChange(preferences.copy(committedCategoryIds = next)) }
                 }
             }
             item {
                 CollapsibleSection("Alerts & widget", initiallyExpanded = false) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(if (hasBudget) "Budget alerts" else "Big-spend alerts", Modifier.weight(1f), color = receiptsColors.ink, style = ReceiptsType.body.copy(fontSize = 12.sp))
+                        Text("Budget alerts", Modifier.weight(1f), color = receiptsColors.ink, style = ReceiptsType.body.copy(fontSize = 12.sp))
                         TogglePill(notificationsGranted) { if (!notificationsGranted) onRequestNotifications() }
                     }
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -307,8 +320,12 @@ fun SettingsScreen(
             item {
                 CollapsibleSection("Data", background = receiptsColors.pinkTint, labelColor = DataLabel, initiallyExpanded = false) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("${transactions.size} stored · no network", Modifier.weight(1f), color = receiptsColors.ink, style = ReceiptsType.body.copy(fontSize = 12.sp))
+                        Text("${transactions.size} stored · no network · not backed up", Modifier.weight(1f), color = receiptsColors.ink, style = ReceiptsType.body.copy(fontSize = 12.sp))
                         Text("Clear", color = DataLabel, style = ReceiptsType.amount.copy(fontSize = 11.5.sp), modifier = Modifier.clickable(role = Role.Button) { confirmClear = true })
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp).clickable(role = Role.Button, onClick = onExport), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Export receipts as CSV", Modifier.weight(1f), color = receiptsColors.ink, style = ReceiptsType.body.copy(fontSize = 12.sp))
+                        Text("Export", color = DataLabel, style = ReceiptsType.amount.copy(fontSize = 11.5.sp))
                     }
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp).clickable(role = Role.Button) { confirmOnboarding = true }, verticalAlignment = Alignment.CenterVertically) {
                         Text("Run first-time setup again", Modifier.weight(1f), color = receiptsColors.ink, style = ReceiptsType.body.copy(fontSize = 12.sp))
@@ -381,21 +398,6 @@ private fun CollapsibleSection(
         }
         AnimatedVisibility(expanded) {
             Column(Modifier.fillMaxWidth().padding(start = 13.dp, end = 13.dp, bottom = 13.dp), content = content)
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun CommittedCategoriesPicker(selected: Set<String>, onChange: (Set<String>) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Categories.filter { !it.notSpending }.sortedBy { it.name }.forEach { spendCategory ->
-            val checked = spendCategory.id in selected
-            ReceiptPill(
-                spendCategory.name,
-                selected = checked,
-                onClick = { onChange(if (checked) selected - spendCategory.id else selected + spendCategory.id) },
-            )
         }
     }
 }

@@ -17,7 +17,7 @@ class DashboardTest {
         nowDateTime.minusMonths(months).toInstant().toEpochMilli()
 
     @Test
-    fun countsIncludedDebitsAndCategoryReviewButNotGeneralReview() {
+    fun countsIncludedDebitsAndCategoryReviewButNotGeneralReviewOrTransfers() {
         val items = listOf(
             transaction("food", 1_000_00, Direction.DEBIT, "food"),
             transaction("transfer", 5_000_00, Direction.DEBIT, "transfers"),
@@ -25,17 +25,30 @@ class DashboardTest {
             transaction("general-review", 700_00, Direction.DEBIT, null, TransactionStatus.NEEDS_REVIEW),
         )
 
-        assertEquals(6_900_00, dashboard(items, Budget(10_000_00), now).spentMinor)
+        // The ₹5,000 "transfers" debit is not spending: only food and the category-review item count.
+        assertEquals(1_900_00, dashboard(items, Budget(10_000_00), now).spentMinor)
     }
 
     @Test
-    fun subtractsAllIncludedCreditsWithoutClamping() {
-        val credit = transaction("salary", 1_500_00, Direction.CREDIT, "income")
+    fun incomeDoesNotReduceSpending() {
+        val salary = transaction("salary", 80_000_00, Direction.CREDIT, "income")
+        val lunch = transaction("lunch", 300_00, Direction.DEBIT, "food")
 
-        val result = dashboard(listOf(credit), Budget(10_000_00), now)
+        val result = dashboard(listOf(salary, lunch), Budget(10_000_00), now)
+
+        assertEquals(300_00, result.spentMinor)
+        assertEquals(9_700_00, result.remainingMinor)
+        assertEquals(null, result.categoryTotals["income"])
+    }
+
+    @Test
+    fun aRefundGivesMoneyBackToTheBudget() {
+        val refund = transaction("refund", 1_500_00, Direction.CREDIT, "refund")
+
+        val result = dashboard(listOf(refund), Budget(10_000_00), now)
 
         assertEquals(-1_500_00, result.spentMinor)
-        assertEquals(-1_500_00L, result.categoryTotals["income"])
+        assertEquals(-1_500_00L, result.categoryTotals["refund"])
         assertEquals(-1_500_00L, result.dailyTotals[nowDateTime.toLocalDate()])
     }
 
@@ -122,7 +135,7 @@ class DashboardTest {
     }
 
     @Test
-    fun committedSpendCountsTowardTotalsButNotTodaysPacing() {
+    fun everyPaymentComesOutOfTodaysAllowance() {
         val today = nowDateTime.toLocalDate()
         val budget = Budget(
             amountMinor = 30_000_00,
@@ -130,19 +143,15 @@ class DashboardTest {
             startEpochDay = today.toEpochDay(),
             endEpochDay = today.plusDays(2).toEpochDay(),
         )
-        val rent = transaction("rent", 12_000_00, Direction.DEBIT, "rent").copy(committed = true)
+        val rent = transaction("rent", 12_000_00, Direction.DEBIT, "rent")
         val lunch = transaction("lunch", 300_00, Direction.DEBIT, "food")
 
         val result = dashboard(listOf(rent, lunch), budget, now)
 
-        // Still tracked as spending against the budget total.
         assertEquals(12_300_00, result.spentMinor)
         assertEquals(12_000_00L, result.categoryTotals["rent"])
-        assertEquals(12_000_00L, result.committedMinor)
-        // The rent doesn't crater today's safe-to-spend — but it is still money that has left, so
-        // today gets an even share of what actually remains (₹17,700 / 3) less the ₹300 lunch,
-        // rather than a share of the whole budget as if the rent had never been paid.
-        assertEquals((30_000_00 - 12_000_00) / 3 - 300_00, result.safeTodayMinor)
+        // A large payment is not held out of pacing: today's share is 30,000/3 and it all went today.
+        assertEquals(30_000_00 / 3 - 12_300_00, result.safeTodayMinor)
     }
 
     @Test
@@ -161,7 +170,6 @@ class DashboardTest {
 
         // The obligation never poses as spending...
         assertEquals(300_00, result.spentMinor)
-        assertEquals(0L, result.committedMinor)
         // ...it comes off the ceiling instead.
         assertEquals(12_000_00L, result.obligationsMinor)
         assertEquals(18_000_00L, result.spendableMinor)
@@ -235,71 +243,12 @@ class DashboardTest {
     }
 
     @Test
-    fun aRepeatedEverydayMerchantIsNotAFixedCommitment() {
-        // Three visits to the same food place, varying amounts, all inside one month.
-        val history = listOf(
-            transaction("a", 250_00, Direction.DEBIT, "food").copy(merchant = "Food Stories", occurredAt = dayOfMonth(4)),
-            transaction("b", 480_00, Direction.DEBIT, "food").copy(merchant = "Food Stories", occurredAt = dayOfMonth(6)),
-            transaction("c", 1_100_00, Direction.DEBIT, "food").copy(merchant = "Food Stories", occurredAt = dayOfMonth(8)),
-        )
+    fun switchingPeriodScalesTheBudgetInsteadOfKeepingTheNumber() {
+        val monthly = Budget(amountMinor = 30_000_00, period = "Month")
 
-        val committed = autoDetectCommitted("food", "Food Stories", 300_00, Direction.DEBIT, history, DefaultCommittedCategoryIds)
-
-        assertEquals(false, committed)
-    }
-
-    @Test
-    fun aSteadyMonthlyChargeIsAFixedCommitment() {
-        val history = listOf(
-            transaction("a", 4_990_00, Direction.DEBIT, "services").copy(merchant = "Gym Co", occurredAt = monthsAgo(1)),
-            transaction("b", 4_990_00, Direction.DEBIT, "services").copy(merchant = "Gym Co", occurredAt = monthsAgo(2)),
-        )
-
-        val committed = autoDetectCommitted("services", "Gym Co", 4_990_00, Direction.DEBIT, history, DefaultCommittedCategoryIds)
-
-        assertEquals(true, committed)
-    }
-
-    @Test
-    fun aSmallRepeatingChargeStaysFlexible() {
-        val history = listOf(
-            transaction("a", 49_00, Direction.DEBIT, "food").copy(merchant = "Chai Point", occurredAt = monthsAgo(1)),
-            transaction("b", 49_00, Direction.DEBIT, "food").copy(merchant = "Chai Point", occurredAt = monthsAgo(2)),
-        )
-
-        val committed = autoDetectCommitted("food", "Chai Point", 49_00, Direction.DEBIT, history, DefaultCommittedCategoryIds)
-
-        assertEquals(false, committed)
-    }
-
-    @Test
-    fun aDeclaredCommittedCategoryIsStillFixedOnTheFirstCharge() {
-        val committed = autoDetectCommitted("rent", "Landlord", 20_000_00, Direction.DEBIT, emptyList(), DefaultCommittedCategoryIds)
-
-        assertEquals(true, committed)
-    }
-
-    @Test
-    fun skippedSpendNeverInflatesTodaysAllowance() {
-        // A skipped receipt is added to spending and used for nothing else, so today's allowance is
-        // simply an even share of what is left — never more, however large the skipped payment.
-        val today = nowDateTime.toLocalDate()
-        val budget = Budget(
-            amountMinor = 20_000_00,
-            period = "Custom",
-            startEpochDay = today.minusDays(5).toEpochDay(),
-            endEpochDay = today.plusDays(25).toEpochDay(),
-        )
-        val earlier = transaction("earlier", 3_840_00, Direction.DEBIT, "food")
-            .copy(occurredAt = nowDateTime.minusDays(3).toInstant().toEpochMilli())
-        val skippedToday = transaction("skipped", 5_300_00, Direction.DEBIT, "transport").copy(committed = true)
-
-        val result = dashboard(listOf(earlier, skippedToday), budget, now)
-
-        assertEquals(9_140_00, result.spentMinor)
-        val daysRemaining = result.daysInPeriod - result.dayOfPeriod + 1
-        // Exactly an even share of what remains, matching the "left per day" the home screen shows.
-        assertEquals(result.remainingMinor / daysRemaining, result.safeTodayMinor)
+        assertEquals(6_000_00L, monthly.amountForPeriod("Week"))
+        assertEquals(30_000_00L, monthly.amountForPeriod("Month"))
+        assertEquals(0L, Budget(period = "Month").amountForPeriod("Week"))
     }
 
     @Test

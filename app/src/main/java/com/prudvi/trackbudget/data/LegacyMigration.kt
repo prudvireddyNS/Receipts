@@ -87,6 +87,10 @@ internal fun migrateLegacyData(
         }
 
         if (legacyDatabase.hasTable("raw_events")) {
+            // The old app stored a message both as a finished transaction and as a raw event. Parsing
+            // the raw event again would count the same payment twice whenever the two carried no
+            // shared reference, so skip any raw event that matches something already migrated.
+            val alreadyMigrated = database.transactions()
             legacyDatabase.query("raw_events", null, null, null, null, null, "occurred_at ASC").use { cursor ->
                 while (cursor.moveToNext()) {
                     val sender = cursor.getString("source_identifier")
@@ -107,6 +111,12 @@ internal fun migrateLegacyData(
                         needsCategoryReview -> TransactionStatus.CATEGORY_REVIEW
                         else -> TransactionStatus.CONFIRMED
                     }
+                    val duplicate = alreadyMigrated.any {
+                        it.direction == parsed.direction &&
+                            it.amountMinor == parsed.amountMinor &&
+                            abs(it.occurredAt - parsed.occurredAt) <= LegacyDuplicateWindowMillis
+                    }
+                    if (duplicate) continue
                     if (
                         database.insert(
                             Transaction(
@@ -138,7 +148,6 @@ internal fun migrateLegacyData(
             .putString("budget_period", "Month")
             .putBoolean("budget_repeats", true)
             .putBoolean("onboarding_complete", legacyPreferences.getBoolean("onboarding_complete", true))
-            .putBoolean("legacy_sms_highwater_pending", true)
             .putInt("legacy_transactions_migrated", migratedTransactions)
             .putInt("legacy_raw_events_migrated", migratedRawEvents)
             .putBoolean("legacy_migration_complete", true)
@@ -147,6 +156,9 @@ internal fun migrateLegacyData(
         legacyDatabase.close()
     }
 }
+
+/** A raw event within this long of a migrated transaction with the same amount is the same payment. */
+private const val LegacyDuplicateWindowMillis = 10 * 60 * 1000L
 
 private fun legacyCategory(name: String?, direction: Direction): String {
     if (direction == Direction.CREDIT) {

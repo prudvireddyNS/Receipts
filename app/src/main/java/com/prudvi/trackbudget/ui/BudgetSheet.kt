@@ -63,7 +63,6 @@ fun BudgetSheet(
         carryOver = false,
         startEpochDay = null,
         endEpochDay = null,
-        categoryLimits = emptyMap(),
     )
     val range = budgetRange(draft)
     // Declared obligations come off the top of the budget, so the per-day figure has to be read

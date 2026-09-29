@@ -87,6 +87,7 @@ suspend fun captureGraphicsLayerToPng(
             else Bitmap.createScaledBitmap(source, size.width, size.height, true)
         } ?: source
         val directory = File(context.cacheDir, "receipts-share").apply { mkdirs() }
+        pruneShareCache(directory)
         val file = File(directory, "${fileNamePrefix.sanitizeFilePrefix()}-${System.currentTimeMillis()}.png")
         FileOutputStream(file).use { output ->
             check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) { "PNG encode failed" }

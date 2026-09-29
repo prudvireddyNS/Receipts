@@ -11,13 +11,15 @@ fun findRefundCandidate(transactions: List<Transaction>, credit: Transaction): T
     }
     val merchant = credit.merchant.normalizedMerchant()
     val exact = candidates.filter { it.amountMinor == credit.amountMinor }
-    if (exact.isNotEmpty()) {
-        return exact.minWithOrNull(
-            compareBy<Transaction> { it.merchant.normalizedMerchant() != merchant }
-                .thenBy { credit.occurredAt - it.occurredAt },
-        )
+    if (!merchant.isSpecificMerchant()) {
+        // Nothing to tell shops apart by: an exact amount is the only signal, so take the closest in time.
+        return exact.minByOrNull { credit.occurredAt - it.occurredAt }
     }
-    if (!merchant.isSpecificMerchant()) return null
+    // A named refund only links to that merchant's own purchase. An equal amount elsewhere is a
+    // coincidence, and linking it would take the money off the wrong category.
+    exact.filter { it.merchant.normalizedMerchant() == merchant }
+        .minByOrNull { credit.occurredAt - it.occurredAt }
+        ?.let { return it }
     return candidates.asSequence()
         .filter { it.merchant.normalizedMerchant() == merchant && it.amountMinor >= credit.amountMinor }
         .minWithOrNull(compareBy<Transaction> { it.amountMinor - credit.amountMinor }.thenBy { credit.occurredAt - it.occurredAt })
