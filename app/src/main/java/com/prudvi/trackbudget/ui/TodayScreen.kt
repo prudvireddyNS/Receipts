@@ -65,6 +65,7 @@ import com.prudvi.trackbudget.model.Direction
 import com.prudvi.trackbudget.model.Transaction
 import com.prudvi.trackbudget.model.TransactionStatus
 import com.prudvi.trackbudget.model.dashboard
+import com.prudvi.trackbudget.model.netSpend
 import com.prudvi.trackbudget.model.periodLabel
 import java.time.LocalDate
 import java.time.ZoneId
@@ -111,7 +112,7 @@ fun TodayScreen(
         ) {
         item("hero") { HomeHero(snapshot, budget, previousComparison, scrub, Modifier.receiptEnter(0)) }
         if (reviewCount > 0) item("review") { ReviewNudge(reviewCount, onReview, Modifier.padding(top = 11.dp).receiptEnter(1)) }
-        item("stats") { HomeStats(snapshot, budget, transactions, Modifier.padding(top = 12.dp).receiptEnter(2)) }
+        item("stats") { HomeStats(snapshot, budget, Modifier.padding(top = 12.dp).receiptEnter(2)) }
         item("bars") {
             val fresh = remember { android.os.SystemClock.uptimeMillis() - screenAppearedAt < ReceiptsMotion.ENTER }
             BurnUpChart(snapshot, budget, Modifier.padding(top = 14.dp).receiptEnter(3), growChart = fresh, onScrub = { scrub = it })
@@ -168,7 +169,14 @@ private fun HomeHero(
     // Declared obligations are already off the top (see dashboard()), so every ratio here is read
     // against what's actually left to spend, not the headline budget.
     val spendable = snapshot.spendableMinor
-    val progress = if (hasBudget) snapshot.spentMinor.toFloat() / spendable.coerceAtLeast(1L) else 0f
+    // When obligations use up the whole budget there is nothing left to divide by: any spending at
+    // all reads as fully used rather than as an absurd ratio.
+    val progress = when {
+        !hasBudget -> 0f
+        spendable > 0L -> snapshot.spentMinor.toFloat() / spendable
+        snapshot.spentMinor > 0L -> 1f
+        else -> 0f
+    }
     val overPace = hasBudget && progress > snapshot.dayOfPeriod.toFloat() / snapshot.daysInPeriod.coerceAtLeast(1)
     // Only the card's ground fades between modes; the numbers themselves must track the finger exactly,
     // so the readout uses the un-animated hero amount rather than the counting-up one.
@@ -297,24 +305,15 @@ private fun ReviewNudge(count: Int, onReview: () -> Unit, modifier: Modifier = M
 }
 
 @Composable
-private fun HomeStats(snapshot: DashboardSnapshot, budget: Budget, transactions: List<Transaction>, modifier: Modifier = Modifier) {
+private fun HomeStats(snapshot: DashboardSnapshot, budget: Budget, modifier: Modifier = Modifier) {
     val hasBudget = budget.amountMinor > 0L
     val daysLeft = (snapshot.daysInPeriod - snapshot.dayOfPeriod + 1).coerceAtLeast(1)
     val leftPerDay = if (hasBudget && daysLeft > 0) snapshot.remainingMinor.coerceAtLeast(0) / daysLeft else snapshot.spentMinor / snapshot.dayOfPeriod.coerceAtLeast(1)
     val headingFor = if (hasBudget) burnUpProjection(snapshot) else snapshot.dailyTotals.maxOfOrNull { abs(it.value) } ?: 0L
     val elapsed = snapshot.dayOfPeriod.coerceAtLeast(1)
-    // `dailyTotals` leaves committed spend out (see dashboard()), so the day rent went out looks
-    // empty there. Count the days off the transactions instead, with the same inclusion rule
-    // dashboard() applies to spending, so a rent-only day is never called quiet.
-    val quietDays = remember(transactions, snapshot.range.start, elapsed, budget.countInvestmentsAsSpending) {
-        val lastDay = snapshot.range.start.plusDays((elapsed - 1).toLong())
-        val spentOn = transactions.asSequence()
-            .filter { it.status in HomeStatuses && it.direction == Direction.DEBIT }
-            .filter { budget.countInvestmentsAsSpending || it.categoryId != "investment" }
-            .map { receiptDate(it.occurredAt) }
-            .filter { !it.isBefore(snapshot.range.start) && !it.isAfter(lastDay) }
-            .toSet()
-        (elapsed - spentOn.size).coerceAtLeast(0)
+    // A quiet day is one with no spending at all; the same rule the recap uses.
+    val quietDays = (0 until elapsed).count { offset ->
+        (snapshot.dailyTotals[snapshot.range.start.plusDays(offset.toLong())] ?: 0L) <= 0L
     }
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         val cyanLabel = if (receiptsColors.monochrome) receiptsColors.ink else androidx.compose.ui.graphics.Color(0xFF0E7C86)
@@ -340,32 +339,31 @@ private fun StatTile(label: String, value: String, background: androidx.compose.
 }
 
 /**
- * Where the period lands if the rest of it looks like a typical day so far.
+ * Where the period lands if the rest of it looks like the days so far.
  *
- * Deliberately **not** a mean. A mean multiplies one unusual day across the whole period: on day 6
- * of a 31-day month a single ₹5,300 purchase — 58% of everything spent — dragged this from ₹24k to
- * ₹47k, which told the user nothing except that they had bought a bike tyre. The median day is
- * robust to exactly that, and a genuinely heavy month still moves it because the median itself
- * rises.
+ * Deliberately **not** a mean of all days: a mean multiplies one unusual day across the whole
+ * period (on day 6 of a 31-day month a single ₹5,300 purchase — 58% of everything spent — dragged
+ * it from ₹24k to ₹47k). Deliberately not a median of *all* days either: someone who spends on
+ * fewer than half their days has a median of zero, and the projection would then never move.
  *
- * Committed spend is already excluded from [DashboardSnapshot.dailyTotals], so a rent debit never
- * inflates the typical day; it is counted once inside `spentMinor`, which the projection starts
- * from. Starting from money actually spent also means the figure can never fall below it.
+ * So the typical spending day is the median of the days that had spending, scaled by how often
+ * a day has spending at all. Starting from money actually spent also means the figure can never
+ * fall below it.
  */
 internal fun burnUpProjection(snapshot: DashboardSnapshot): Long {
     val days = snapshot.daysInPeriod.coerceAtLeast(1)
     val elapsed = snapshot.dayOfPeriod.coerceIn(1, days)
-    // Every elapsed day, including the ones with no spending at all — dropping quiet days would
-    // quietly bias the typical day upward.
-    val daily = (0 until elapsed).map { offset ->
-        (snapshot.dailyTotals[snapshot.range.start.plusDays(offset.toLong())] ?: 0L).coerceAtLeast(0L)
-    }.sorted()
-    val typicalDay = if (daily.size % 2 == 0) {
-        (daily[daily.size / 2 - 1] + daily[daily.size / 2]) / 2
+    val active = (0 until elapsed).map { offset ->
+        snapshot.dailyTotals[snapshot.range.start.plusDays(offset.toLong())] ?: 0L
+    }.filter { it > 0L }.sorted()
+    if (active.isEmpty()) return snapshot.spentMinor.coerceAtLeast(0L)
+    val typicalActiveDay = if (active.size % 2 == 0) {
+        (active[active.size / 2 - 1] + active[active.size / 2]) / 2
     } else {
-        daily[daily.size / 2]
+        active[active.size / 2]
     }
-    return snapshot.spentMinor + typicalDay * (days - elapsed)
+    val expectedPerDay = typicalActiveDay * active.size / elapsed
+    return snapshot.spentMinor + expectedPerDay * (days - elapsed)
 }
 
 /** One day of the burn-up series: what the curve is worth there, and what that day alone cost. */
@@ -373,11 +371,6 @@ internal data class BurnUpScrub(val date: LocalDate, val cumulativeMinor: Long, 
 
 /**
  * The burn-up curve, one point per elapsed day.
- *
- * [DashboardSnapshot.dailyTotals] deliberately leaves committed spend out so one lump payment can't
- * crater day-by-day pacing. A burn-up is a record of what happened rather than a pacing signal, so
- * it adds those days back **on the day they actually landed** — a rent debit paid on the 20th
- * belongs on the 20th, not smeared onto day one.
  *
  * The head of the curve must always equal [DashboardSnapshot.spentMinor], because the hero prints
  * that same number directly above it. A receipt dated later in the period (the editor's date
@@ -388,15 +381,11 @@ internal fun burnUpSeries(snapshot: DashboardSnapshot): List<BurnUpScrub> {
     val days = snapshot.daysInPeriod.coerceAtLeast(1)
     val elapsed = snapshot.dayOfPeriod.coerceIn(1, days)
     val lastDrawn = snapshot.range.start.plusDays((elapsed - 1).toLong())
-    fun totalOn(date: LocalDate): Long =
-        (snapshot.dailyTotals[date] ?: 0L) + (snapshot.committedDailyTotals[date] ?: 0L)
-    val future = (snapshot.dailyTotals.keys + snapshot.committedDailyTotals.keys)
-        .filter { it > lastDrawn }
-        .sumOf(::totalOn)
+    val future = snapshot.dailyTotals.filterKeys { it > lastDrawn }.values.sum()
     var running = 0L
     return (0 until elapsed).map { offset ->
         val date = snapshot.range.start.plusDays(offset.toLong())
-        val own = totalOn(date) + if (offset == elapsed - 1) future else 0L
+        val own = (snapshot.dailyTotals[date] ?: 0L) + if (offset == elapsed - 1) future else 0L
         running += own
         BurnUpScrub(date, running, own)
     }
@@ -1067,13 +1056,8 @@ private fun previousComparison(transactions: List<Transaction>, budget: Budget, 
     val zone = ZoneId.systemDefault()
     val start = previousStart.atStartOfDay(zone).toInstant().toEpochMilli()
     val end = previousEnd.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-    val previous = transactions.filter { it.status in HomeStatuses && it.occurredAt in start until end }.sumOf {
-        when {
-            it.direction == Direction.CREDIT -> -it.amountMinor
-            it.categoryId == "investment" && !budget.countInvestmentsAsSpending -> 0L
-            else -> it.amountMinor
-        }
-    }
+    val previous = transactions.filter { it.status in HomeStatuses && it.occurredAt in start until end }
+        .sumOf { it.netSpend(budget.countInvestmentsAsSpending) }
     val difference = snapshot.spentMinor - previous
     val word = if (days == 1) "day" else "days"
     return when {

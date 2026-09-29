@@ -10,15 +10,24 @@ class ReceiptsFeatureRulesTest {
     private val today = LocalDate.of(2026, 8, 20)
 
     @Test
-    fun refundMatchingRequiresAnExactAmountOrTheSameMerchant() {
+    fun refundMatchingOnlyLinksTheSameMerchantWhenTheRefundNamesOne() {
         val credit = transaction("refund", 500_00, today, 12, "Myntra", "refund", Direction.CREDIT)
-        val exact = transaction("exact", 500_00, today.minusDays(10), 12, "Different shop", "shopping")
+        val sameMerchantExact = transaction("exact", 500_00, today.minusDays(10), 12, "Myntra", "shopping")
         val sameMerchantPartial = transaction("partial", 900_00, today.minusDays(2), 12, "Myntra", "shopping")
-        val unrelated = transaction("unrelated", 510_00, today.minusDays(1), 12, "Cafe", "food")
+        val otherShopSameAmount = transaction("coincidence", 500_00, today.minusDays(1), 12, "Cafe", "food")
 
-        assertEquals("exact", findRefundCandidate(listOf(unrelated, sameMerchantPartial, exact), credit)?.id)
-        assertEquals("partial", findRefundCandidate(listOf(unrelated, sameMerchantPartial), credit)?.id)
-        assertEquals(null, findRefundCandidate(listOf(unrelated), credit))
+        assertEquals("exact", findRefundCandidate(listOf(otherShopSameAmount, sameMerchantPartial, sameMerchantExact), credit)?.id)
+        assertEquals("partial", findRefundCandidate(listOf(otherShopSameAmount, sameMerchantPartial), credit)?.id)
+        // An equal amount at a different shop is a coincidence, not a match.
+        assertEquals(null, findRefundCandidate(listOf(otherShopSameAmount), credit))
+    }
+
+    @Test
+    fun anUnnamedRefundFallsBackToAnExactAmount() {
+        val credit = transaction("refund", 500_00, today, 12, "Money received", "refund", Direction.CREDIT)
+        val exact = transaction("exact", 500_00, today.minusDays(3), 12, "Myntra", "shopping")
+
+        assertEquals("exact", findRefundCandidate(listOf(exact), credit)?.id)
     }
 
     private fun transaction(

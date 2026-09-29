@@ -6,57 +6,16 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-enum class AppMode { CHILL, PACE, STACK }
 enum class MoneyRhythm { MONTHLY, WEEKLY, ROLLING }
-enum class AppAmplitude { LOUD, QUIET }
 enum class AppThemePreference { COLORFUL, SUBTLE, LIGHT, DARK }
 
 data class ReceiptsPreferences(
-    val mode: AppMode = AppMode.CHILL,
     val rhythm: MoneyRhythm = MoneyRhythm.MONTHLY,
-    val amplitude: AppAmplitude = AppAmplitude.LOUD,
     val resetDay: Int = 1,
     val theme: AppThemePreference = AppThemePreference.COLORFUL,
     val smsTrackingEnabled: Boolean = false,
     val countInvestmentsAsSpending: Boolean = false,
     val biometricLockEnabled: Boolean = false,
-    val committedCategoryIds: Set<String> = DefaultCommittedCategoryIds,
-)
-
-val DefaultCommittedCategoryIds: Set<String> = setOf("rent", "subscription", "bills", "insurance")
-
-data class Goal(
-    val id: String,
-    val name: String,
-    val targetMinor: Long,
-    val savedMinor: Long = 0,
-    val targetEpochDay: Long? = null,
-    val createdAt: Long = System.currentTimeMillis(),
-    val completedAt: Long? = null,
-) {
-    init {
-        require(targetMinor > 0) { "Goal target must be positive" }
-    }
-
-}
-
-data class EarnedStamp(
-    val id: String,
-    val earnedAt: Long,
-    val periodKey: String? = null,
-    val seen: Boolean = false,
-)
-
-data class DismissedDropRule(
-    val ruleKey: String,
-    val dismissedAt: Long,
-)
-
-data class PeriodSnapshot(
-    val periodKey: String,
-    val budgetMinor: Long,
-    val spentMinor: Long,
-    val closedAt: Long,
 )
 
 fun Budget.withRhythm(rhythm: MoneyRhythm, resetDay: Int = this.resetDay): Budget = copy(

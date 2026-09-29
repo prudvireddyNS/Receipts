@@ -173,7 +173,7 @@ private fun ReceiptsApp(
         onRequestSms = requestSms,
         onRequestNotifications = requestNotifications,
         onAdd = { transaction ->
-            repository.addManual(transaction.amountMinor, transaction.merchant, transaction.categoryId ?: "misc", transaction.direction, transaction.occurredAt, transaction.committed)
+            repository.addManual(transaction.amountMinor, transaction.merchant, transaction.categoryId ?: "misc", transaction.direction, transaction.occurredAt)
             if (transaction.direction == Direction.DEBIT && canLearnMerchant(transaction.merchant)) {
                 repository.addLearnedRule(transaction.merchant, transaction.categoryId ?: "misc", Direction.DEBIT)
             }
@@ -332,7 +332,7 @@ private fun MainShell(
             label = "receipt-overlay",
         ) { current ->
             when (current) {
-                ReceiptOverlay.Add -> AddSheet(onClose = { overlay = null }, onSave = { onAdd(it); overlay = null }, learnedRules = learnedRules, committedCategoryIds = preferences.committedCategoryIds)
+                ReceiptOverlay.Add -> AddSheet(onClose = { overlay = null }, onSave = { onAdd(it); overlay = null }, learnedRules = learnedRules)
                 ReceiptOverlay.Settings -> SettingsScreen(
                     preferences = preferences,
                     budget = budget,
@@ -356,6 +356,7 @@ private fun MainShell(
                     onNoBudget = onNoBudget,
                     onRerunOnboarding = onRerunOnboarding,
                     onClearAll = onClear,
+                    onExport = { exportReceipts(context, transactions) },
                     widgetInstalled = widgetManager.getAppWidgetIds(widgetProvider).isNotEmpty(),
                     widgetPinSupported = widgetManager.isRequestPinAppWidgetSupported,
                 )
@@ -381,7 +382,7 @@ private fun MainShell(
                         onClose = { overlay = null },
                         onSave = {
                             onSave(it.copy(note = if (it.source == com.prudvi.trackbudget.model.TransactionSource.SMS) TrackRepository.USER_EDITED_MARKER else it.note))
-                            if (it.status != TransactionStatus.EXCLUDED && it.direction == Direction.DEBIT && canLearnMerchant(it.merchant)) {
+                            if (it.status != TransactionStatus.EXCLUDED && it.direction == Direction.DEBIT && it.categoryId != tx.categoryId && canLearnMerchant(it.merchant)) {
                                 onLearn(it.merchant, it.categoryId ?: "misc", Direction.DEBIT)
                             }
                             overlay = null

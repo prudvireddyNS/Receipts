@@ -156,7 +156,6 @@ fun OnboardingScreen(
                         carryOver = false,
                         startEpochDay = null,
                         endEpochDay = null,
-                        categoryLimits = emptyMap(),
                     )
                     onFinish(preferences, budget)
                 },

@@ -10,13 +10,18 @@ class TrackBudgetApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Opening the database (and, once, migrating the old one) is the slow part of startup; do it
+        // off the main thread so the first frame never waits on it.
+        Thread { repository }.apply { name = "receipts-warmup"; start() }
         val manager = getSystemService(NotificationManager::class.java)
+        // The first release used a heads-up "credits" channel that buzzed for every uncertain receipt.
+        manager.deleteNotificationChannel("credits")
         manager.createNotificationChannels(
             listOf(
                 NotificationChannel(
-                    "credits",
+                    "review",
                     "Receipt review",
-                    NotificationManager.IMPORTANCE_HIGH,
+                    NotificationManager.IMPORTANCE_DEFAULT,
                 ).apply {
                     description = "Receipts that need review or resolution"
                 },

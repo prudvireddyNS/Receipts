@@ -367,33 +367,12 @@ fun ReceiptRow(
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(receiptMerchant(transaction), color = receiptsColors.ink, style = ReceiptsType.bodyStrong, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = if (excluded) TextDecoration.LineThrough else null, modifier = Modifier.weight(1f, fill = false))
-                if (transaction.committed) ReceiptSkipTag()
             }
             Text("${categoryName(transaction.categoryId)} · ${receiptTime(transaction.occurredAt)}", color = receiptsColors.fade, style = ReceiptsType.meta, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (trailing == null) {
             Text(receiptSignedMoney(transaction), color = amountColor, style = ReceiptsType.amount, maxLines = 1)
         } else trailing()
-    }
-}
-
-@Composable
-/**
- * Marks a receipt that is skipped when working out the daily pace.
- *
- * Not to be confused with the "fixed obligations" in Settings, which are a declared monthly amount
- * taken off the budget before the period starts. This is a single real payment that still counts in
- * full towards what was spent — it is only held out of day-by-day pacing, so one lumpy purchase
- * cannot crater "safe to spend today" or pose as a typical day in the projection.
- */
-fun ReceiptSkipTag(modifier: Modifier = Modifier) {
-    Box(
-        modifier.clip(RoundedCornerShape(ReceiptsRadius.tiny))
-            .background(receiptsColors.warm)
-            .border(1.dp, receiptsColors.rule, RoundedCornerShape(ReceiptsRadius.tiny))
-            .padding(horizontal = 5.dp, vertical = 1.dp),
-    ) {
-        Text("SKIP", color = receiptsColors.fade, style = ReceiptsType.stamp.copy(fontSize = 8.sp, letterSpacing = 0.8.sp))
     }
 }
 

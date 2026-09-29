@@ -1,5 +1,7 @@
 # Receipts product decisions
 
+> **Status note (2026-09-29).** Several 2026-08-23 entries below describe features that no longer ship: Feed, Goals, Stamps, Drops, Wrapped, the rolling-pace baseline, app modes and the "Check inbox" / SMS high-water-mark flow (there is no inbox reading, only live `RECEIVE_SMS`). They were removed in `83053e4` without a note; the `goals`, `stamps`, `dismissed_drops` and `period_snapshots` tables remain in the schema (additive migrations only) but nothing reads or writes them. The widget follows the in-app theme preference, not the platform theme. Read the 2026-09-29 section first where it conflicts.
+
 This file records deliberate changes or clarifications to `receipts-build-spec.html` so the product does not drift through one-off implementation choices.
 
 ## 2026-08-23
@@ -53,3 +55,45 @@ The light-theme `Fade` token is darkened from `#6E736B` to `#5F645C`, and light-
 ### Widget follows platform theme
 
 The app defaults to light and supports Light, Dark, and System preferences. RemoteViews cannot consume Compose locals, so the widget uses matching light/night Android colour resources and follows the device theme.
+
+## 2026-09-29
+
+### What counts as spending
+
+Only debits outside the "not spending" categories (transfers, repayments, and investments unless the Settings toggle is on) count as spent. Only a **refund** credit gives money back to the budget. Salary, top-ups and other money in are recorded but never reduce spend, so an ₹80,000 credit can no longer make a month look unspent.
+
+### "Skip in daily pace" is gone
+
+Every payment counts towards today's allowance, the burn-up curve and the projection, on the day it happened. The per-receipt flag, the SKIP tag, the Settings category defaults and the auto-detector were removed. The `committed` database column stays (unused) so the schema needs no migration.
+
+### The projection
+
+"Heading for" is the median *spending* day scaled by how often a day has spending, added to what is already spent. A median over all days collapsed to zero for anyone who spends on fewer than half their days.
+
+### Obligations that cover the whole budget
+
+The budget is still "set"; nothing is left to spend. The widget, the home hero and the alerts all say so instead of reading it as "no budget".
+
+### Switching Monthly ⇄ Weekly scales the budget
+
+By 7/30 (or 30/7), rounded to the nearest ₹10, instead of keeping the number.
+
+### Alerts
+
+Budget alerts are keyed by period *and* ceiling, so changing the budget mid-period is a new budget. The Settings amount field commits after typing pauses rather than on every keystroke. Per-category limits now survive saving the budget and raise their own 80% / 100% alerts. Receipt-review notifications use a default-importance channel (`review`), not a heads-up one.
+
+### Learning merchant rules
+
+A rule is learned only from a category the user chose, never from the app's own best guess.
+
+### Refund matching
+
+A refund that names a merchant links only to that merchant's purchase. An unnamed refund may fall back to an exact amount.
+
+### SMS parsing
+
+`credited to your a/c` is not a self-transfer (only "from your a/c … to your a/c" is). A reference number must contain a digit. `Credit Card` / `Debit Card` are not verbs. The dedupe key includes the receive time, so two identical alerts are two payments.
+
+### Export
+
+Settings → Data → Export writes every receipt to CSV and opens the share sheet. Backup is off and there is no network, so this is the only copy anyone can keep.

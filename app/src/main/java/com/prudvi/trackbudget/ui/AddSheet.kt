@@ -67,14 +67,11 @@ fun AddSheet(
     onSave: (Transaction) -> Unit,
     modifier: Modifier = Modifier,
     learnedRules: List<LearnedRule> = emptyList(),
-    committedCategoryIds: Set<String> = com.prudvi.trackbudget.model.DefaultCommittedCategoryIds,
 ) {
     var amount by rememberSaveable { mutableStateOf("") }
     var direction by rememberSaveable { mutableStateOf(Direction.DEBIT) }
     var selectedCategory by rememberSaveable { mutableStateOf("food") }
     var categoryOverridden by rememberSaveable { mutableStateOf(false) }
-    var committed by rememberSaveable { mutableStateOf(false) }
-    var committedOverridden by rememberSaveable { mutableStateOf(false) }
     var showTo by rememberSaveable { mutableStateOf(false) }
     var showAllCategories by rememberSaveable { mutableStateOf(false) }
     var to by rememberSaveable { mutableStateOf("") }
@@ -85,9 +82,6 @@ fun AddSheet(
 
     LaunchedEffect(to, direction, suggestedCategory, categoryOverridden, showTo) {
         if (showTo && !categoryOverridden) selectedCategory = suggestedCategory
-    }
-    LaunchedEffect(selectedCategory, committedOverridden) {
-        if (!committedOverridden) committed = selectedCategory in committedCategoryIds
     }
     LaunchedEffect(showTo) {
         if (showTo) {
@@ -100,7 +94,6 @@ fun AddSheet(
         direction = next
         selectedCategory = if (next == Direction.CREDIT) "income" else suggestedCategory(to, next, learnedRules)
         categoryOverridden = false
-        committedOverridden = false
         showAllCategories = false
     }
 
@@ -127,7 +120,6 @@ fun AddSheet(
                 note = "",
                 status = TransactionStatus.CONFIRMED,
                 source = TransactionSource.MANUAL,
-                committed = direction == Direction.DEBIT && committed,
             ),
         )
     }
@@ -202,21 +194,6 @@ fun AddSheet(
             }
         }
 
-        }
-
-        if (direction == Direction.DEBIT) {
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Skip in daily pace",
-                    Modifier.weight(1f),
-                    color = receiptsColors.inkSoft,
-                    style = ReceiptsType.bodyStrong.copy(fontSize = 12.sp),
-                )
-                ReceiptCheckbox(committed) {
-                    committed = it
-                    committedOverridden = true
-                }
-            }
         }
 
         ReceiptAmountPad(

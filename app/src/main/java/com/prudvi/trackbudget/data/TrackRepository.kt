@@ -4,7 +4,6 @@ import android.content.Context
 import com.prudvi.trackbudget.model.Budget
 import com.prudvi.trackbudget.model.Commitment
 import com.prudvi.trackbudget.model.Direction
-import com.prudvi.trackbudget.model.autoDetectCommitted
 import com.prudvi.trackbudget.model.LearnedRule
 import com.prudvi.trackbudget.model.ParsedTransaction
 import com.prudvi.trackbudget.model.Transaction
@@ -163,7 +162,7 @@ class TrackRepository(private val context: Context) {
     }
 
     @Synchronized
-    fun addManual(amountMinor: Long, merchant: String, categoryId: String, direction: Direction, occurredAt: Long = System.currentTimeMillis(), committed: Boolean = false) {
+    fun addManual(amountMinor: Long, merchant: String, categoryId: String, direction: Direction, occurredAt: Long = System.currentTimeMillis()) {
         require(amountMinor > 0) { "Amount must be positive" }
         val transaction = Transaction(
             id = UUID.randomUUID().toString(),
@@ -174,7 +173,6 @@ class TrackRepository(private val context: Context) {
             categoryId = categoryId,
             status = TransactionStatus.CONFIRMED,
             source = TransactionSource.MANUAL,
-            committed = committed,
         )
         database.insert(transaction)
         refresh()
@@ -247,10 +245,10 @@ class TrackRepository(private val context: Context) {
     private fun parseSms(sender: String, body: String, receivedAt: Long): Transaction? {
         if (!smsTrackingEnabled) return null
         val parsed = SmsParser.parse(sender, body, receivedAt) ?: return null
-        return parsed.toTransaction(sender, body)
+        return parsed.toTransaction(sender, body, receivedAt)
     }
 
-    private fun ParsedTransaction.toTransaction(sender: String, body: String): Transaction {
+    private fun ParsedTransaction.toTransaction(sender: String, body: String, receivedAt: Long): Transaction {
         val knownSender = SmsParser.senderKey(sender) != null && sender.any(Char::isLetter)
         val normalizedMerchant = merchant.trim().uppercase()
         val matchingRules = if (direction == Direction.DEBIT) _learnedRules.value.filter { it.merchant == normalizedMerchant } else emptyList()
@@ -287,9 +285,8 @@ class TrackRepository(private val context: Context) {
             accountTail = accountTail,
             sender = sender,
             refId = refId,
-            sourceKey = sourceKey(sender, body),
+            sourceKey = sourceKey(sender, body, receivedAt),
             rawMessage = body,
-            committed = autoDetectCommitted(categoryId, merchant, amountMinor, direction, database.transactions(), receipts.preferencesFlow.value.committedCategoryIds),
         )
         val refundMatch = if (categoryId == "refund") findRefundCandidate(database.transactions(), candidate)?.id else null
         return candidate.copy(refundOfId = refundMatch)
@@ -300,8 +297,10 @@ class TrackRepository(private val context: Context) {
         return "$range:${value.amountMinor}:${value.period}:${value.resetDay}"
     }
 
-    private fun sourceKey(sender: String, body: String): String = MessageDigest.getInstance("SHA-256")
-        .digest("$sender|$body".toByteArray())
+    // The receive time is part of the key: two genuine payments can produce word-for-word identical
+    // texts (a card alert with no time or reference), and hashing only the text dropped the second.
+    private fun sourceKey(sender: String, body: String, receivedAt: Long): String = MessageDigest.getInstance("SHA-256")
+        .digest("$sender|$receivedAt|$body".toByteArray())
         .take(12)
         .joinToString("") { "%02x".format(it) }
 

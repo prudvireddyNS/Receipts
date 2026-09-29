@@ -42,7 +42,7 @@ object ReceiptNotifications {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification = Notification.Builder(context, "credits")
+        val notification = Notification.Builder(context, "review")
             .setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle("A receipt needs you")
             .setContentText(text)

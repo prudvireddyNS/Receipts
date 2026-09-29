@@ -35,67 +35,23 @@ data class Transaction(
     val refundOfId: String? = null,
     val rawMessage: String? = null,
     val recurring: Boolean = false,
-    /**
-     * Skipped when working out the daily pace. Shown as "SKIP" on a receipt, and set by the
-     * "Skip in daily pace" checkbox.
-     *
-     * The payment still counts in full towards what was spent — it is only held out of
-     * [DashboardSnapshot.dailyTotals], so a single lumpy purchase cannot crater "safe to spend
-     * today" or pose as a typical day in the projection.
-     *
-     * Distinct from [Commitment], the declared monthly obligation taken off the budget up front.
-     * The column keeps its original `committed` name so existing rows keep working.
-     */
-    val committed: Boolean = false,
 )
 
-/**
- * Auto-detects whether a new transaction is a "committed" spend (rent, a lump transfer, an
- * annual premium): tracked as spending, but excluded from day-by-day pacing so it doesn't
- * crater "safe to spend today". Used for SMS-parsed transactions, which have no user checkbox.
- */
-fun autoDetectCommitted(
-    categoryId: String?,
-    merchant: String,
-    amountMinor: Long,
-    direction: Direction,
-    history: List<Transaction>,
-    committedCategoryIds: Set<String>,
-): Boolean {
-    if (direction != Direction.DEBIT) return false
-    if (categoryId in committedCategoryIds) return true
-    val normalizedMerchant = merchant.trim().lowercase()
-    // A standing charge repeats in *different months* at *roughly the same amount*. Merely having
-    // paid a merchant before is not enough: a favourite lunch place is visited far more often than
-    // rent is paid, and treating it as fixed quietly dropped everyday food out of daily pacing.
-    if (normalizedMerchant.isNotBlank() && amountMinor >= StandingChargeFloorMinor) {
-        val sameMerchant = history.filter {
-            it.direction == Direction.DEBIT &&
-                it.status != TransactionStatus.EXCLUDED &&
-                it.merchant.trim().lowercase() == normalizedMerchant
-        }
-        val steady = sameMerchant.filter { withinTolerance(it.amountMinor, amountMinor) }
-        val distinctMonths = steady.map {
-            Instant.ofEpochMilli(it.occurredAt).atZone(ZoneId.systemDefault()).toLocalDate().withDayOfMonth(1)
-        }.distinct().size
-        if (distinctMonths >= 2) return true
+/** Whether this receipt is money spent: a debit outside the "not spending" categories. */
+fun Transaction.countsAsSpend(countInvestments: Boolean): Boolean =
+    direction == Direction.DEBIT && when (categoryId) {
+        "investment" -> countInvestments
+        else -> category(categoryId)?.notSpending != true
     }
-    val recentDebits = history.filter { it.direction == Direction.DEBIT && it.status != TransactionStatus.EXCLUDED }
-    if (recentDebits.size >= 5) {
-        val amounts = recentDebits.map { it.amountMinor }.sorted()
-        val median = amounts[amounts.size / 2]
-        if (median > 0 && amountMinor >= median * 4 && amountMinor >= 300_000L) return true
-    }
-    return false
-}
 
-/** Below this, a repeating merchant is a habit, not an obligation. */
-private const val StandingChargeFloorMinor = 100_000L
+/** Only a refund gives money back to the budget; salary, top-ups and reimbursed transfers do not. */
+fun Transaction.isSpendRefund(): Boolean = direction == Direction.CREDIT && categoryId == "refund"
 
-/** Two charges count as the same standing amount when they differ by no more than an eighth. */
-private fun withinTolerance(a: Long, b: Long): Boolean {
-    val larger = maxOf(a, b)
-    return larger > 0 && kotlin.math.abs(a - b) * 8 <= larger
+/** What this receipt does to "spent": positive for spending, negative for a refund, zero otherwise. */
+fun Transaction.netSpend(countInvestments: Boolean): Long = when {
+    countsAsSpend(countInvestments) -> amountMinor
+    isSpendRefund() -> -amountMinor
+    else -> 0L
 }
 
 data class Budget(
@@ -131,9 +87,8 @@ data class Commitment(
  * exactly as it was typed — prorating by days/30 turned a ₹20,000 rent into ₹20,666.66 in a 31-day
  * month, which reads as a bug rather than as arithmetic. Only genuinely shorter periods (weekly,
  * custom) take a share.
- */
-/**
- * Note: an obligation is a *declared* amount, so if the matching debit is also captured (a rent SMS,
+ *
+ * An obligation is a *declared* amount, so if the matching debit is also captured (a rent SMS,
  * say) the same money is counted twice — once off the budget here, once as real spend. Nothing
  * reconciles the two; the payment has to be deleted or excluded by hand.
  */
@@ -145,6 +100,17 @@ fun Commitment.shareMinor(range: BudgetRange): Long {
 
 /** Summed over [Commitment.shareMinor] so the total always equals the rows the UI lists. */
 fun Budget.obligationsMinor(range: BudgetRange): Long = commitments.sumOf { it.shareMinor(range) }
+
+/**
+ * The same budget expressed for another period. Switching Monthly ⇄ Weekly used to keep the number,
+ * so ₹30,000 a month quietly became ₹30,000 a week. The amount is scaled by 7/30 (or back) and
+ * rounded to the nearest ₹10 so it stays a figure someone would have typed.
+ */
+fun Budget.amountForPeriod(newPeriod: String): Long {
+    if (amountMinor <= 0L || newPeriod == period) return amountMinor
+    val scaled = if (newPeriod == "Week") amountMinor * 7 / 30 else amountMinor * 30 / 7
+    return ((scaled + 500) / 1_000) * 1_000
+}
 
 data class BudgetRange(val start: LocalDate, val endInclusive: LocalDate) {
     val days: Int = (endInclusive.toEpochDay() - start.toEpochDay() + 1).toInt().coerceAtLeast(1)
@@ -192,14 +158,6 @@ data class DashboardSnapshot(
     val categoryTotals: Map<String, Long>,
     val range: BudgetRange,
     val dailyTotals: Map<LocalDate, Long>,
-    /** Committed *transactions* that have actually landed (rent debit, a lump transfer). Part of [spentMinor]. */
-    val committedMinor: Long = 0,
-    /**
-     * Committed spend keyed by the day it actually landed. [dailyTotals] leaves it out so one lump
-     * payment can't crater daily pacing; a burn-up needs it back, on the right day, or the curve
-     * tells a story that never happened.
-     */
-    val committedDailyTotals: Map<LocalDate, Long> = emptyMap(),
     /** User-declared fixed obligations prorated to this period. Taken off the budget, never added to [spentMinor]. */
     val obligationsMinor: Long = 0,
     /** The budget minus [obligationsMinor] — what's actually available to spend. 0 when no budget is set. */
@@ -265,12 +223,10 @@ fun dashboard(transactions: List<Transaction>, budget: Budget, now: Long = Syste
     val active = transactions.filter {
         it.status in IncludedStatuses && it.occurredAt in start until endExclusive
     }
-    val includedDebits = active.filter { transaction ->
-        transaction.direction == Direction.DEBIT &&
-            (budget.countInvestmentsAsSpending || transaction.categoryId != "investment")
-    }
+    val countInvestments = budget.countInvestmentsAsSpending
+    val includedDebits = active.filter { it.countsAsSpend(countInvestments) }
     val debitCategories = transactions.filter { it.direction == Direction.DEBIT }.associate { it.id to it.categoryId.orEmpty() }
-    val includedCredits = active.filter { it.direction == Direction.CREDIT }
+    val includedCredits = active.filter { it.isSpendRefund() }
     val debitTotal = includedDebits.sumOf { it.amountMinor }
     val creditTotal = includedCredits.sumOf { it.amountMinor }
     // Declared obligations come off the budget rather than going onto spend: `spentMinor` stays a
@@ -282,33 +238,15 @@ fun dashboard(transactions: List<Transaction>, budget: Budget, now: Long = Syste
     val remaining = spendable - spent
     val day = (current.toEpochDay() - range.start.toEpochDay() + 1).toInt().coerceIn(1, range.days)
     val daysRemaining = (range.days - day + 1).coerceAtLeast(1)
-    val committedMinor = includedDebits.filter { it.committed }.sumOf { it.amountMinor }
-    val committedDaily = includedDebits.filter { it.committed }
-        .groupBy { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }
-        .mapValues { (_, items) -> items.sumOf { it.amountMinor } }
 
-    // Day-by-day pacing excludes committed spend (rent, lump transfers, annual premiums) so a
-    // single big payment doesn't crater "safe to spend today" — it still counts in `spent` above.
     val daily = active.groupBy {
         Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate()
-    }.mapValues { (_, items) ->
-        items.sumOf { transaction ->
-            when {
-                transaction.direction == Direction.DEBIT && !transaction.committed && (budget.countInvestmentsAsSpending || transaction.categoryId != "investment") -> transaction.amountMinor
-                transaction.direction == Direction.CREDIT -> -transaction.amountMinor
-                else -> 0L
-            }
-        }
-    }.filterValues { it != 0L }.toMutableMap()
+    }.mapValues { (_, items) -> items.sumOf { it.netSpend(countInvestments) } }
+        .filterValues { it != 0L }
 
-    // A skipped receipt counts towards what was spent and nothing else. So today's allowance is
-    // worked out from the balance as it stood this morning with only *paced* spending added back:
-    // the skipped money is gone from the pool like any other payment, it simply never charges
-    // itself to a particular day. Adding it back (as this once did) handed today a bigger allowance
-    // than an average day, immediately after a large payment.
-    val pacedSpentToday = daily[current] ?: 0L
-    val remainingBeforeToday = spendable - (spent - pacedSpentToday)
-    val safeToday = remainingBeforeToday / daysRemaining - pacedSpentToday
+    val spentToday = daily[current] ?: 0L
+    val remainingBeforeToday = spendable - (spent - spentToday)
+    val safeToday = remainingBeforeToday / daysRemaining - spentToday
     val categoryTotals = mutableMapOf<String, Long>()
     includedDebits.forEach { transaction ->
         val key = transaction.categoryId.orEmpty()
@@ -329,8 +267,6 @@ fun dashboard(transactions: List<Transaction>, budget: Budget, now: Long = Syste
         categoryTotals = categoryTotals,
         range = range,
         dailyTotals = daily,
-        committedMinor = committedMinor,
-        committedDailyTotals = committedDaily,
         obligationsMinor = obligationsMinor,
         spendableMinor = spendable,
     )

@@ -12,8 +12,6 @@ class BurnUpSeriesTest {
     private fun snapshot(
         spentMinor: Long,
         dailyTotals: Map<LocalDate, Long> = emptyMap(),
-        committedDailyTotals: Map<LocalDate, Long> = emptyMap(),
-        committedMinor: Long = committedDailyTotals.values.sum(),
         dayOfPeriod: Int = 6,
         daysInPeriod: Int = 31,
     ) = DashboardSnapshot(
@@ -26,19 +24,16 @@ class BurnUpSeriesTest {
         categoryTotals = emptyMap(),
         range = BudgetRange(start, start.plusDays((daysInPeriod - 1).toLong())),
         dailyTotals = dailyTotals,
-        committedMinor = committedMinor,
-        committedDailyTotals = committedDailyTotals,
     )
 
     private fun day(offset: Long) = start.plusDays(offset)
 
     @Test
-    fun committedSpendLandsOnTheDayItWasPaidNotOnDayOne() {
+    fun aLargePaymentLandsOnTheDayItWasPaidNotOnDayOne() {
         // Rent paid on day 5 must not appear as money already gone on day 1.
         val snapshot = snapshot(
             spentMinor = 12_200_00,
-            dailyTotals = mapOf(day(0) to 200_00),
-            committedDailyTotals = mapOf(day(4) to 12_000_00),
+            dailyTotals = mapOf(day(0) to 200_00, day(4) to 12_000_00),
         )
 
         val series = burnUpSeries(snapshot)
@@ -53,8 +48,7 @@ class BurnUpSeriesTest {
     fun theHeadOfTheCurveAlwaysEqualsTheHeroAmount() {
         val snapshot = snapshot(
             spentMinor = 9_140_00,
-            dailyTotals = mapOf(day(0) to 200_00, day(2) to 1_800_00, day(5) to 5_300_00),
-            committedDailyTotals = mapOf(day(4) to 1_840_00),
+            dailyTotals = mapOf(day(0) to 200_00, day(2) to 1_800_00, day(4) to 1_840_00, day(5) to 5_300_00),
         )
 
         assertEquals(snapshot.spentMinor, burnUpSeries(snapshot).last().cumulativeMinor)
@@ -92,15 +86,22 @@ class BurnUpSeriesTest {
     }
 
     @Test
-    fun quietDaysCountAsZeroTowardTheTypicalDay() {
-        // Four of six days had no spending; the typical day must reflect that, not ignore it.
+    fun aSparseSpenderStillGetsAProjectionThatMoves() {
+        // Two spending days out of six. The median of *all* days is zero, which used to freeze the
+        // projection at what was already spent; instead the typical spending day (₹2,000) is scaled
+        // by how often a day has spending at all (2 of 6).
         val snapshot = snapshot(
             spentMinor = 4_000_00,
             dailyTotals = mapOf(day(4) to 1_000_00, day(5) to 3_000_00),
         )
 
-        // sorted days: 0,0,0,0,1000,3000 -> median 0
-        assertEquals(4_000_00, burnUpProjection(snapshot))
+        val perDay = 2_000_00L * 2 / 6
+        assertEquals(4_000_00 + perDay * 25, burnUpProjection(snapshot))
+    }
+
+    @Test
+    fun noSpendingProjectsNothingMore() {
+        assertEquals(0, burnUpProjection(snapshot(spentMinor = 0)))
     }
 
     @Test

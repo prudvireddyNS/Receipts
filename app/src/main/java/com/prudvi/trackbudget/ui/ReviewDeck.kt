@@ -131,7 +131,10 @@ fun ReviewDeck(
             ReviewAction.KEEP -> {
                 if (amountMinor <= 0L) return
                 val categoryId = selectedCategory.ifBlank { if (resolvedDirection == Direction.CREDIT) "income" else "misc" }
-                if (resolvedDirection == Direction.DEBIT && canLearnMerchant(transaction.merchant)) onLearn(transaction.merchant, categoryId, Direction.DEBIT)
+                // Only a category the user chose themselves becomes a rule. Swiping Keep on the app's own
+                // best guess used to teach it back to itself, so one wrong guess skipped review forever.
+                val choseCategory = selectedCategory != defaultCategoryId(transaction)
+                if (choseCategory && resolvedDirection == Direction.DEBIT && canLearnMerchant(transaction.merchant)) onLearn(transaction.merchant, categoryId, Direction.DEBIT)
                 onSave(transaction.copy(amountMinor = amountMinor, direction = resolvedDirection, categoryId = categoryId, status = TransactionStatus.CONFIRMED))
             }
         }

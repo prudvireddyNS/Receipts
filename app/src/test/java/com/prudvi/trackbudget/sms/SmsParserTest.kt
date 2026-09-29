@@ -223,4 +223,59 @@ class SmsParserTest {
         requireNotNull(result)
         assertTrue(result.confidence < 0.75f)
     }
+
+    @Test
+    fun creditedToYourAccountIsNotAnOwnAccountTransfer() {
+        val result = SmsParser.parse(
+            "AX-AXISBK",
+            "INR 5000.00 credited to your A/c no. XX1234 on 12-08-25 by UPI from Ravi. UPI Ref 452312345678.",
+            now,
+        )
+
+        requireNotNull(result)
+        assertEquals(Direction.CREDIT, result.direction)
+        assertFalse(result.excludeByDefault)
+    }
+
+    @Test
+    fun aRefundCreditedToYourAccountIsNotExcluded() {
+        val result = SmsParser.parse(
+            "AX-AXISBK",
+            "Refund of INR 250.00 credited to your A/c XX1234 for Amazon order. Ref 334455667788.",
+            now,
+        )
+
+        requireNotNull(result)
+        assertTrue(result.isExplicitRefund)
+        assertFalse(result.excludeByDefault)
+    }
+
+    @Test
+    fun aTransferBetweenYourOwnAccountsIsStillExcluded() {
+        val result = SmsParser.parse(
+            "HDFCBK",
+            "Rs 5,000.00 transferred from your a/c XX1234 to your a/c XX9876. Ref 452312345678.",
+            now,
+        )
+
+        requireNotNull(result)
+        assertTrue(result.excludeByDefault)
+    }
+
+    @Test
+    fun wordsAreNotMistakenForReferenceNumbers() {
+        val result = SmsParser.parse(
+            "HDFCBK",
+            "Rs 200.00 debited from a/c XX1234 to Blinkit. Transaction successful.",
+            now,
+        )
+
+        requireNotNull(result)
+        assertNull(result.refId)
+    }
+
+    @Test
+    fun creditCardIsNotReadAsACreditVerb() {
+        assertNull(SmsParser.parse("HDFCBK", "Alert: Rs 500 on your Credit Card XX1234 at SWIGGY.", now))
+    }
 }
